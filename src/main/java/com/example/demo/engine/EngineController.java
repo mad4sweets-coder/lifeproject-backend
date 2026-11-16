@@ -66,4 +66,15 @@ public class EngineController {
 		}
 		return ResponseEntity.ok(life);
 	}
+
+	// C06 직업 선택 (테스트용 GET → 나중에 PostMapping으로 변경)
+	@GetMapping("/api/engine/job")
+	public ResponseEntity<?> chooseJob(@RequestParam int lifeId, @RequestParam String jobId) {
+		LifeDTO life = engineService.chooseJob(lifeId, jobId);
+		if (life == null) {
+			return ResponseEntity.badRequest()
+					.body("지금은 직업을 고를 수 없거나, 학력이 부족한 직업이에요.");
+		}
+		return ResponseEntity.ok(life);
+	}
 }

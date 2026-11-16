@@ -20,12 +20,28 @@ public class LifeDTO {
 	private double happiness;	// 행복
 	private double knowledge;	// 지식
 	private double relation;	// 관계
+	private String eduLevel;	// 학력 NONE, ELEM, MIDDLE, HIGH, UNI, GRAD (C06)
+	private String schoolStatus;	// 재학 상태 ENROLLED, GRADUATED, DROPPED (C06)
+	private String dropReason;	// 중퇴 사유 (C06)
+	private String jobId;	// 현재·마지막 직업 (C06)
+	private String jobStatus;	// EMPLOYED, UNEMPLOYED, RETIRED / 취업 전 null (C06)
+	private int jobYears;	// 근속 연수 (C06)
+	private int prepScore;	// 취업 준비 점수 0~2 (C06)
+	private Double incomeRate;	// 현재 소득 배율 (C06)
+	private long income;	// 올해 소득 (C06)
+	private long assets;	// 재산, 마이너스 가능 (C06)
+	private Long pension;	// 연금액 (C06)
 	private String stageCode;	// 나이대 (C04)
 	private String focusCode;	// 집중 선택 (C04)
 	private Integer deathAge;	// 사망 나이 (C07)
 	private String deathCause;	// 사망 원인 (C07)
+	private Long avgIncome;	// 평균 소득 (C07 최종 결과)
+	private Double lifeScore;	// 인생 점수 (C07 최종 결과)
 	private boolean needFocus;	// [화면용] 집중 선택 창 띄우기 (C04)
 	private List<String> focusOptions;	// [화면용] 고를 수 있는 집중 목록 (C04)
+	private boolean needJob;	// [화면용] 직업 선택 창 띄우기 (C06)
+	private List<JobDTO> jobOffers;	// [화면용] 제안된 직업 3개 (C06)
+	private String jobName;	// [화면용] 직업 이름
 	private String countryName;	// [화면용] 나라 이름
 	private String histName;	// [화면용] 당시 국가명
 	private Double lifeExpectancy;	// [화면용] 기대수명
@@ -168,6 +184,94 @@ public class LifeDTO {
 		this.relation = relation;
 	}
 
+	public String getEduLevel() {
+		return eduLevel;
+	}
+
+	public void setEduLevel(String eduLevel) {
+		this.eduLevel = eduLevel;
+	}
+
+	public String getSchoolStatus() {
+		return schoolStatus;
+	}
+
+	public void setSchoolStatus(String schoolStatus) {
+		this.schoolStatus = schoolStatus;
+	}
+
+	public String getDropReason() {
+		return dropReason;
+	}
+
+	public void setDropReason(String dropReason) {
+		this.dropReason = dropReason;
+	}
+
+	public String getJobId() {
+		return jobId;
+	}
+
+	public void setJobId(String jobId) {
+		this.jobId = jobId;
+	}
+
+	public String getJobStatus() {
+		return jobStatus;
+	}
+
+	public void setJobStatus(String jobStatus) {
+		this.jobStatus = jobStatus;
+	}
+
+	public int getJobYears() {
+		return jobYears;
+	}
+
+	public void setJobYears(int jobYears) {
+		this.jobYears = jobYears;
+	}
+
+	public int getPrepScore() {
+		return prepScore;
+	}
+
+	public void setPrepScore(int prepScore) {
+		this.prepScore = prepScore;
+	}
+
+	public Double getIncomeRate() {
+		return incomeRate;
+	}
+
+	public void setIncomeRate(Double incomeRate) {
+		this.incomeRate = incomeRate;
+	}
+
+	public long getIncome() {
+		return income;
+	}
+
+	public void setIncome(long income) {
+		this.income = income;
+	}
+
+	public long getAssets() {
+		return assets;
+	}
+
+	public void setAssets(long assets) {
+		this.assets = assets;
+	}
+
+	public Long getPension() {
+		return pension;
+	}
+
+	public void setPension(Long pension) {
+		this.pension = pension;
+	}
+
 	public String getStageCode() {
 		return stageCode;
 	}
@@ -200,6 +304,22 @@ public class LifeDTO {
 		this.deathCause = deathCause;
 	}
 
+	public Long getAvgIncome() {
+		return avgIncome;
+	}
+
+	public void setAvgIncome(Long avgIncome) {
+		this.avgIncome = avgIncome;
+	}
+
+	public Double getLifeScore() {
+		return lifeScore;
+	}
+
+	public void setLifeScore(Double lifeScore) {
+		this.lifeScore = lifeScore;
+	}
+
 	public boolean isNeedFocus() {
 		return needFocus;
 	}
@@ -214,6 +334,30 @@ public class LifeDTO {
 
 	public void setFocusOptions(List<String> focusOptions) {
 		this.focusOptions = focusOptions;
+	}
+
+	public boolean isNeedJob() {
+		return needJob;
+	}
+
+	public void setNeedJob(boolean needJob) {
+		this.needJob = needJob;
+	}
+
+	public List<JobDTO> getJobOffers() {
+		return jobOffers;
+	}
+
+	public void setJobOffers(List<JobDTO> jobOffers) {
+		this.jobOffers = jobOffers;
+	}
+
+	public String getJobName() {
+		return jobName;
+	}
+
+	public void setJobName(String jobName) {
+		this.jobName = jobName;
 	}
 
 	public String getCountryName() {

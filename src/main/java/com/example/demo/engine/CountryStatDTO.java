@@ -3,6 +3,7 @@ package com.example.demo.engine;
 public class CountryStatDTO {
 	private String countryCode;	// 나라 코드
 	private String nameKo;	// 한글 이름
+	private String regionCode;	// 권역 (EAST, SOUTHEAST, SOUTH, CENTRAL, WEST)
 	private Long births;	// 출생아 수
 	private Double lifeExpectancy;	// 기대수명
 	private Double infantMortality;	// 영아사망률(‰)
@@ -24,6 +25,14 @@ public class CountryStatDTO {
 
 	public void setNameKo(String nameKo) {
 		this.nameKo = nameKo;
+	}
+
+	public String getRegionCode() {
+		return regionCode;
+	}
+
+	public void setRegionCode(String regionCode) {
+		this.regionCode = regionCode;
 	}
 
 	public Long getBirths() {

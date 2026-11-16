@@ -14,6 +14,8 @@ public interface EngineDao {
 	String selectHistName(LifeDTO life);
 	int selectNextLifeId();
 	int abandonGuestLife(String guestToken);
+	int moveOldGuestStats();
+	int deleteOldGuestLives();
 	int insertLife(LifeDTO life);
 
 	// C03 1년 진행
@@ -24,7 +26,19 @@ public interface EngineDao {
 	// C07 사망 판정
 	CountryStatDTO selectYearStat(LifeDTO life);
 	int endLife(LifeDTO life);
+	List<DeathCauseDTO> selectDeathCauses(DeathCauseDTO cond);
+	Long selectAvgIncome(int lifeId);
 
 	// C04 집중 선택
 	int updateFocus(LifeDTO life);
+
+	// C05 경험
+	int insertExperience(ExperienceDTO exp);
+
+	// C06 진학
+	RegionStatDTO selectRegionStat(LifeDTO life);
+
+	// C06 직업
+	List<JobDTO> selectJobs();
+	JobDTO selectJob(String jobId);
 }

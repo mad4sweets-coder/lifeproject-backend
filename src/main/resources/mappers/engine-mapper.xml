@@ -65,6 +65,22 @@
 		  AND STATUS = 'PLAYING'
 	</update>
 
+	<!-- C03: 오래된 비회원 인생 정리 1) 통계용 숫자만 GUEST_LIFE_STAT에 옮겨 두기 -->
+	<insert id="moveOldGuestStats">
+		INSERT INTO GUEST_LIFE_STAT (STAT_ID, BIRTH_COUNTRY, BIRTH_YEAR, GENDER, STATUS, DEATH_AGE, STARTED_AT, ENDED_AT)
+		SELECT SEQ_GUEST_LIFE_STAT.NEXTVAL, BIRTH_COUNTRY, BIRTH_YEAR, GENDER, STATUS, DEATH_AGE, CREATED_AT, ENDED_AT
+		FROM LIFE
+		WHERE MEMBER_ID IS NULL
+		  AND (LAST_PLAYED_AT &lt; SYSDATE - 7 OR (STATUS &lt;&gt; 'PLAYING' AND LAST_PLAYED_AT &lt; SYSDATE - 1))
+	</insert>
+
+	<!-- C03: 오래된 비회원 인생 정리 2) 삭제 (기록·경험은 CASCADE로 같이 삭제) -->
+	<delete id="deleteOldGuestLives">
+		DELETE FROM LIFE
+		WHERE MEMBER_ID IS NULL
+		  AND (LAST_PLAYED_AT &lt; SYSDATE - 7 OR (STATUS &lt;&gt; 'PLAYING' AND LAST_PLAYED_AT &lt; SYSDATE - 1))
+	</delete>
+
 	<!-- C02: 인생 저장 (나머지 컬럼은 DEFAULT 값) -->
 	<insert id="insertLife" parameterType="com.example.demo.engine.LifeDTO">
 		INSERT INTO LIFE (
@@ -100,6 +116,17 @@
 		       HAPPINESS       AS happiness,
 		       KNOWLEDGE       AS knowledge,
 		       RELATION        AS relation,
+		       EDU_LEVEL       AS eduLevel,
+		       SCHOOL_STATUS   AS schoolStatus,
+		       DROP_REASON     AS dropReason,
+		       JOB_ID          AS jobId,
+		       JOB_STATUS      AS jobStatus,
+		       JOB_YEARS       AS jobYears,
+		       PREP_SCORE      AS prepScore,
+		       INCOME_RATE     AS incomeRate,
+		       NVL(INCOME, 0)  AS income,
+		       NVL(ASSETS, 0)  AS assets,
+		       PENSION         AS pension,
 		       STAGE_CODE      AS stageCode,
 		       FOCUS_CODE      AS focusCode,
 		       STATUS          AS status
@@ -114,6 +141,17 @@
 		    HAPPINESS      = #{happiness},
 		    KNOWLEDGE      = #{knowledge},
 		    RELATION       = #{relation},
+		    EDU_LEVEL      = #{eduLevel},
+		    SCHOOL_STATUS  = #{schoolStatus, jdbcType=VARCHAR},
+		    DROP_REASON    = #{dropReason, jdbcType=VARCHAR},
+		    JOB_ID         = #{jobId, jdbcType=VARCHAR},
+		    JOB_STATUS     = #{jobStatus, jdbcType=VARCHAR},
+		    JOB_YEARS      = #{jobYears},
+		    PREP_SCORE     = #{prepScore},
+		    INCOME_RATE    = #{incomeRate, jdbcType=NUMERIC},
+		    INCOME         = #{income},
+		    ASSETS         = #{assets},
+		    PENSION        = #{pension, jdbcType=NUMERIC},
 		    STAGE_CODE     = #{stageCode, jdbcType=VARCHAR},
 		    FOCUS_CODE     = #{focusCode, jdbcType=VARCHAR},
 		    LAST_PLAYED_AT = SYSDATE
@@ -123,11 +161,13 @@
 	<insert id="insertYearLog" parameterType="com.example.demo.engine.LifeDTO">
 		INSERT INTO LIFE_YEAR_LOG (
 			LIFE_ID, AGE, YEAR_NO, COUNTRY_CODE,
-			HEALTH, HAPPINESS, KNOWLEDGE, RELATION, FOCUS_CODE
+			HEALTH, HAPPINESS, KNOWLEDGE, RELATION, FOCUS_CODE, EDU_LEVEL,
+			JOB_ID, INCOME, ASSETS
 		) VALUES (
 			#{lifeId}, #{currentAge}, #{birthYear} + #{currentAge}, #{currentCountry},
 			ROUND(#{health}), ROUND(#{happiness}), ROUND(#{knowledge}), ROUND(#{relation}),
-			#{focusCode, jdbcType=VARCHAR}
+			#{focusCode, jdbcType=VARCHAR}, #{eduLevel, jdbcType=VARCHAR},
+			#{jobId, jdbcType=VARCHAR}, #{income}, #{assets}
 		)
 	</insert>
 
@@ -137,12 +177,15 @@
 	<select id="selectYearStat" parameterType="com.example.demo.engine.LifeDTO"
 		resultType="com.example.demo.engine.CountryStatDTO">
 		SELECT * FROM (
-			SELECT COUNTRY_CODE     AS countryCode,
-			       LIFE_EXPECTANCY  AS lifeExpectancy,
-			       INFANT_MORTALITY AS infantMortality
-			FROM COUNTRY_STAT
-			WHERE COUNTRY_CODE = #{currentCountry}
-			ORDER BY ABS(DECADE - (#{birthYear} + #{currentAge}))
+			SELECT s.COUNTRY_CODE     AS countryCode,
+			       c.REGION_CODE      AS regionCode,
+			       s.LIFE_EXPECTANCY  AS lifeExpectancy,
+			       s.INFANT_MORTALITY AS infantMortality,
+			       s.GDP_PER_CAPITA   AS gdpPerCapita
+			FROM COUNTRY_STAT s
+			JOIN COUNTRY c ON s.COUNTRY_CODE = c.COUNTRY_CODE
+			WHERE s.COUNTRY_CODE = #{currentCountry}
+			ORDER BY ABS(s.DECADE - (#{birthYear} + #{currentAge}))
 		)
 		WHERE ROWNUM = 1
 	</select>
@@ -153,6 +196,8 @@
 		SET STATUS         = 'ENDED',
 		    DEATH_AGE      = #{deathAge},
 		    DEATH_CAUSE    = #{deathCause},
+		    AVG_INCOME     = #{avgIncome, jdbcType=NUMERIC},
+		    LIFE_SCORE     = #{lifeScore, jdbcType=NUMERIC},
 		    ENDED_AT       = SYSDATE,
 		    LAST_PLAYED_AT = SYSDATE
 		WHERE LIFE_ID = #{lifeId}
@@ -166,5 +211,86 @@
 		    LAST_PLAYED_AT = SYSDATE
 		WHERE LIFE_ID = #{lifeId}
 	</update>
+
+	<!-- ================= C05 경험 ================= -->
+
+	<insert id="insertExperience" parameterType="com.example.demo.engine.ExperienceDTO">
+		INSERT INTO LIFE_EXPERIENCE (LIFE_ID, EXP_ID, AGE, YEAR_NO)
+		VALUES (#{lifeId}, #{expId}, #{age}, #{yearNo})
+	</insert>
+
+	<!-- ================= C06 진학 ================= -->
+
+	<!-- 사는 나라가 속한 권역의 그해 진학률 (그 연대가 없으면 가장 가까운 연대) -->
+	<select id="selectRegionStat" parameterType="com.example.demo.engine.LifeDTO"
+		resultType="com.example.demo.engine.RegionStatDTO">
+		SELECT * FROM (
+			SELECT r.ENROLL_ELEM   AS enrollElem,
+			       r.ENROLL_MIDDLE AS enrollMiddle,
+			       r.ENROLL_HIGH   AS enrollHigh,
+			       r.ENROLL_UNI    AS enrollUni,
+			       r.AGRI_RATE     AS agriRate,
+			       r.INDUSTRY_RATE AS industryRate,
+			       r.SERVICE_RATE  AS serviceRate
+			FROM REGION_STAT r
+			JOIN COUNTRY c ON r.REGION_CODE = c.REGION_CODE
+			WHERE c.COUNTRY_CODE = #{currentCountry}
+			ORDER BY ABS(r.DECADE - (#{birthYear} + #{currentAge}))
+		)
+		WHERE ROWNUM = 1
+	</select>
+
+	<!-- ================= C06 직업 ================= -->
+
+	<select id="selectJobs" resultType="com.example.demo.engine.JobDTO">
+		SELECT JOB_ID       AS jobId,
+		       JOB_NAME     AS jobName,
+		       REQUIRED_EDU AS requiredEdu,
+		       INDUSTRY     AS industry,
+		       INCOME_RATE  AS incomeRate
+		FROM JOB
+	</select>
+
+	<select id="selectJob" parameterType="string" resultType="com.example.demo.engine.JobDTO">
+		SELECT JOB_ID       AS jobId,
+		       JOB_NAME     AS jobName,
+		       REQUIRED_EDU AS requiredEdu,
+		       INDUSTRY     AS industry,
+		       INCOME_RATE  AS incomeRate
+		FROM JOB
+		WHERE JOB_ID = #{jobId}
+	</select>
+
+	<!-- ================= C07 사망 원인·최종 결과 ================= -->
+
+	<!-- 사는 나라 권역의 그 나이대 사망 원인 비율 (그해와 가장 가까운 연대) -->
+	<select id="selectDeathCauses" parameterType="com.example.demo.engine.DeathCauseDTO"
+		resultType="com.example.demo.engine.DeathCauseDTO">
+		SELECT d.CAUSE_NAME AS causeName,
+		       d.RATIO      AS ratio
+		FROM REGION_DEATH_CAUSE d
+		JOIN COUNTRY c ON d.REGION_CODE = c.REGION_CODE
+		WHERE c.COUNTRY_CODE = #{countryCode}
+		  AND d.AGE_GROUP = #{ageGroup}
+		  AND d.DECADE = (
+			SELECT DECADE FROM (
+				SELECT d2.DECADE
+				FROM REGION_DEATH_CAUSE d2
+				JOIN COUNTRY c2 ON d2.REGION_CODE = c2.REGION_CODE
+				WHERE c2.COUNTRY_CODE = #{countryCode}
+				  AND d2.AGE_GROUP = #{ageGroup}
+				ORDER BY ABS(d2.DECADE - #{yearNo})
+			)
+			WHERE ROWNUM = 1
+		  )
+	</select>
+
+	<!-- 평균 소득 (소득이 있던 해만) -->
+	<select id="selectAvgIncome" parameterType="int" resultType="long">
+		SELECT ROUND(AVG(INCOME))
+		FROM LIFE_YEAR_LOG
+		WHERE LIFE_ID = #{lifeId}
+		  AND INCOME > 0
+	</select>
 
 </mapper>
