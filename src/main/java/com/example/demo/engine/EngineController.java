@@ -28,4 +28,10 @@ public class EngineController {
 			@RequestParam(required = false) String guestToken) {
 		return engineService.birth(decade, guestToken);
 	}
+
+	// C03 1년 진행 (테스트용 GET → 나중에 PostMapping으로 변경)
+	@GetMapping("/api/engine/next")
+	public LifeDTO nextYear(@RequestParam int lifeId) {
+		return engineService.nextYear(lifeId);
+	}
 }

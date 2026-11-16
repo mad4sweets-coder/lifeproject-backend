@@ -8,10 +8,16 @@ import org.apache.ibatis.annotations.Mapper;
 public interface EngineDao {
 	String selectNow();
 
+	// C02 출생
 	List<CountryStatDTO> selectBirthCountries(int decade);
 	String selectRandomName(LifeDTO life);
 	String selectHistName(LifeDTO life);
 	int selectNextLifeId();
 	int abandonGuestLife(String guestToken);
 	int insertLife(LifeDTO life);
+
+	// C03 1년 진행
+	LifeDTO selectLife(int lifeId);
+	int updateLifeYear(LifeDTO life);
+	int insertYearLog(LifeDTO life);
 }

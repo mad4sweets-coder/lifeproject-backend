@@ -8,6 +8,8 @@
 		SELECT TO_CHAR(SYSDATE, 'YYYY-MM-DD HH24:MI:SS') FROM dual
 	</select>
 
+	<!-- ================= C02 랜덤 출생 ================= -->
+
 	<!-- C02: 그 연대에 태어날 수 있는 나라 + 통계 -->
 	<select id="selectBirthCountries" parameterType="int"
 		resultType="com.example.demo.engine.CountryStatDTO">
@@ -75,6 +77,52 @@
 			#{name}, #{gender}, #{birthCountry}, #{currentCountry}, #{birthYear},
 			#{wealthClass}, #{isUrban},
 			#{health}, #{happiness}, #{knowledge}, #{relation}
+		)
+	</insert>
+
+	<!-- ================= C03 1년 진행 ================= -->
+
+	<select id="selectLife" parameterType="int"
+		resultType="com.example.demo.engine.LifeDTO">
+		SELECT LIFE_ID         AS lifeId,
+		       MEMBER_ID       AS memberId,
+		       GUEST_TOKEN     AS guestToken,
+		       START_TYPE      AS startType,
+		       NAME            AS name,
+		       GENDER          AS gender,
+		       BIRTH_COUNTRY   AS birthCountry,
+		       CURRENT_COUNTRY AS currentCountry,
+		       BIRTH_YEAR      AS birthYear,
+		       WEALTH_CLASS    AS wealthClass,
+		       IS_URBAN        AS isUrban,
+		       CURRENT_AGE     AS currentAge,
+		       HEALTH          AS health,
+		       HAPPINESS       AS happiness,
+		       KNOWLEDGE       AS knowledge,
+		       RELATION        AS relation,
+		       STATUS          AS status
+		FROM LIFE
+		WHERE LIFE_ID = #{lifeId}
+	</select>
+
+	<update id="updateLifeYear" parameterType="com.example.demo.engine.LifeDTO">
+		UPDATE LIFE
+		SET CURRENT_AGE    = #{currentAge},
+		    HEALTH         = #{health},
+		    HAPPINESS      = #{happiness},
+		    KNOWLEDGE      = #{knowledge},
+		    RELATION       = #{relation},
+		    LAST_PLAYED_AT = SYSDATE
+		WHERE LIFE_ID = #{lifeId}
+	</update>
+
+	<insert id="insertYearLog" parameterType="com.example.demo.engine.LifeDTO">
+		INSERT INTO LIFE_YEAR_LOG (
+			LIFE_ID, AGE, YEAR_NO, COUNTRY_CODE,
+			HEALTH, HAPPINESS, KNOWLEDGE, RELATION
+		) VALUES (
+			#{lifeId}, #{currentAge}, #{birthYear} + #{currentAge}, #{currentCountry},
+			ROUND(#{health}), ROUND(#{happiness}), ROUND(#{knowledge}), ROUND(#{relation})
 		)
 	</insert>
 

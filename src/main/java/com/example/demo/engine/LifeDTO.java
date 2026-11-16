@@ -12,6 +12,8 @@ public class LifeDTO {
 	private int birthYear;	// 출생 연도
 	private int wealthClass;	// 가정형편 1~5
 	private String isUrban;	// 도시 여부 Y, N
+	private int currentAge;	// 현재 나이
+	private String status;	// PLAYING, ENDED, ABANDONED
 	private double health;	// 건강
 	private double happiness;	// 행복
 	private double knowledge;	// 지식
@@ -108,6 +110,22 @@ public class LifeDTO {
 
 	public void setIsUrban(String isUrban) {
 		this.isUrban = isUrban;
+	}
+
+	public int getCurrentAge() {
+		return currentAge;
+	}
+
+	public void setCurrentAge(int currentAge) {
+		this.currentAge = currentAge;
+	}
+
+	public String getStatus() {
+		return status;
+	}
+
+	public void setStatus(String status) {
+		this.status = status;
 	}
 
 	public double getHealth() {
