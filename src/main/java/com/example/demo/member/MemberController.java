@@ -25,7 +25,7 @@ public class MemberController {
 	// 회원가입 (M01)  POST /api/members
 	// 보내는 JSON: { loginId, password, passwordCheck, nickname, email }
 	@PostMapping
-	public ResponseEntity<?> join(@RequestBody MemberDto dto) {
+	public ResponseEntity<?> join(@RequestBody MemberDTO dto) {
 		try {
 			String error = service.join(dto);
 			if (error != null) {

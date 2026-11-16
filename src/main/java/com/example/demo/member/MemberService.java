@@ -8,10 +8,10 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class MemberService {
 
-	private MemberDao dao;
+	private MemberDAO dao;
 	private BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
 
-	public MemberService(MemberDao dao) {
+	public MemberService(MemberDAO dao) {
 		this.dao = dao;
 	}
 
@@ -31,7 +31,7 @@ public class MemberService {
 	// ===== 회원가입 (M01) =====
 	// 문제가 있으면 오류 문구를 돌려주고, 성공하면 null 을 돌려준다
 	@Transactional // 회원 INSERT 와 특성 INSERT 중 하나라도 실패하면 둘 다 취소
-	public String join(MemberDto dto) {
+	public String join(MemberDTO dto) {
 
 		// 1. 입력 형식 검사 (화면에서도 검사하지만 서버에서 한 번 더)
 		if (dto.getLoginId() == null || !dto.getLoginId().matches("^[a-zA-Z0-9]{4,20}$")) {

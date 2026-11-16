@@ -4,7 +4,7 @@ import java.util.Date;
 
 // MEMBER 테이블 한 줄을 담는 상자
 // 회원가입 화면에서 보낸 JSON도 이 상자에 담겨서 들어온다
-public class MemberDto {
+public class MemberDTO {
 
 	private int memberId;        // MEMBER_ID  (SEQ_MEMBER로 자동 번호)
 	private String loginId;      // LOGIN_ID   아이디
