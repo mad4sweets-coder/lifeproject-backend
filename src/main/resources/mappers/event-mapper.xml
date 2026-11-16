@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="Event">
+
+	<select id="selectTemplates" resultType="com.example.demo.event.dto.EventTemplateDTO">
+		SELECT * FROM EVENT_TEMPLATE ORDER BY TEMPLATE_ID
+	</select>
+	
+</mapper>
