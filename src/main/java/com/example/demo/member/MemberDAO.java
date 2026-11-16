@@ -38,4 +38,9 @@ public class MemberDAO {
 	public int insertDefaultTraits(int memberId) {
 		return mybatis.insert("member.insertDefaultTraits", memberId);
 	}
+
+	// 로그인: 아이디로 회원 1명 찾기 (없으면 null)
+	public MemberDTO selectByLoginId(String loginId) {
+		return mybatis.selectOne("member.selectByLoginId", loginId);
+	}
 }

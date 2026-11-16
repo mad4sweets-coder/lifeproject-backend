@@ -67,4 +67,24 @@ public class MemberService {
 
 		return null; // 성공
 	}
+
+	// ===== 로그인 (M02) =====
+	// 아이디·비밀번호가 맞으면 회원 정보를, 틀리면 null 을 돌려준다
+	public MemberDTO login(String loginId, String password) {
+
+		// 0. 빈 값이면 바로 실패
+		if (loginId == null || password == null) return null;
+
+		// 1. 아이디로 회원 찾기
+		MemberDTO member = dao.selectByLoginId(loginId);
+		if (member == null) return null; // 없는 아이디
+
+		// 2. 탈퇴한 회원은 로그인 불가
+		if ("WITHDRAWN".equals(member.getStatus())) return null;
+
+		// 3. 입력한 비밀번호를 DB의 BCrypt 값과 비교
+		if (!encoder.matches(password, member.getPassword())) return null;
+
+		return member; // 성공
+	}
 }

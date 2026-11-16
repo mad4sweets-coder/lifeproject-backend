@@ -36,4 +36,13 @@
 		SELECT #{memberId}, TRAIT_ID, 1 FROM TRAIT
 	</insert>
 
+	<!-- M02: 로그인 - 아이디로 회원 1명 찾기
+	     (map-underscore-to-camel-case 설정 덕분에 LOGIN_ID → loginId 로 자동으로 담김) -->
+	<select id="selectByLoginId" parameterType="string" resultType="com.example.demo.member.MemberDTO">
+		SELECT MEMBER_ID, LOGIN_ID, PASSWORD, NICKNAME, EMAIL,
+		       MEMBER_ROLE, POINT, STATUS, JOIN_DATE
+		FROM MEMBER
+		WHERE LOGIN_ID = #{loginId}
+	</select>
+
 </mapper>
