@@ -21,10 +21,13 @@ public class EngineService {
 	private Random random = new Random();
 
 	// ================= C02 랜덤 출생 =================
-	public LifeDTO birth(int decade, String oldGuestToken) {
+	// memberId: 로그인한 회원 번호 (비회원이면 null)
+	public LifeDTO birth(int decade, String oldGuestToken, Integer memberId) {
 
-		// 0. 진행 중이던 비회원 인생이 있으면 포기 처리
-		if (oldGuestToken != null && !oldGuestToken.equals("")) {
+		// 0. 진행 중이던 인생이 있으면 포기 처리 (회원 1명·토큰 1개당 진행 중 인생 1개)
+		if (memberId != null) {
+			engineDao.abandonMemberLife(memberId);
+		} else if (oldGuestToken != null && !oldGuestToken.equals("")) {
 			engineDao.abandonGuestLife(oldGuestToken);
 		}
 
@@ -103,9 +106,14 @@ public class EngineService {
 		}
 		life.setName(name);
 
-		// ⑦ 비회원 임시 토큰 (회원 로그인은 나중에 연결)
-		life.setStartType("GUEST");
-		life.setGuestToken(UUID.randomUUID().toString());
+		// ⑦ 회원이면 회원 번호, 비회원이면 새 임시 토큰 발급
+		if (memberId != null) {
+			life.setStartType("MEMBER");
+			life.setMemberId(memberId);
+		} else {
+			life.setStartType("GUEST");
+			life.setGuestToken(UUID.randomUUID().toString());
+		}
 
 		// ⑧ 번호 받고 저장 + 0세 기록
 		life.setLifeId(engineDao.selectNextLifeId());
@@ -119,6 +127,39 @@ public class EngineService {
 		life.setInfantMortality(country.getInfantMortality());
 		life.setGdpPerCapita(country.getGdpPerCapita());
 
+		return life;
+	}
+
+	// ================= 본인 확인 =================
+
+	// 내 인생인지 확인: 회원 인생은 로그인한 회원 번호, 비회원 인생은 임시 토큰이 맞아야 함
+	public boolean isMyLife(int lifeId, Integer memberId, String guestToken) {
+		LifeDTO life = engineDao.selectLife(lifeId);
+		if (life == null) {
+			return false;
+		}
+		if (life.getMemberId() != null) {
+			return life.getMemberId().equals(memberId);
+		}
+		return life.getGuestToken() != null && life.getGuestToken().equals(guestToken);
+	}
+
+	// ================= C03 이어하기 =================
+
+	// 진행 중인 인생 찾기 (회원은 회원 번호, 비회원은 임시 토큰)
+	public LifeDTO currentLife(Integer memberId, String guestToken) {
+		if (memberId == null && (guestToken == null || guestToken.equals(""))) {
+			return null;
+		}
+		LifeDTO cond = new LifeDTO();
+		cond.setMemberId(memberId);
+		cond.setGuestToken(guestToken);
+		LifeDTO life = engineDao.selectPlayingLife(cond);
+		if (life != null && life.getStageCode() != null && life.getFocusCode() == null) {
+			// 집중을 아직 안 골랐으면 선택 창 다시 띄우기
+			life.setNeedFocus(true);
+			life.setFocusOptions(focusOptions(life.getStageCode(), life));
+		}
 		return life;
 	}
 
@@ -136,11 +177,12 @@ public class EngineService {
 
 		// ① 집중 효과 (C04): 고르지 않았으면 나이대 기본값
 		if (life.getStageCode() != null && life.getFocusCode() == null) {
-			life.setFocusCode(defaultFocus(life.getStageCode()));
+			life.setFocusCode(defaultFocus(life));
 		}
 		applyFocus(life);
+		fixStats(life);
 
-		// ② 능력치 자연 변화 + 범위 정리 (C05)
+		// ② 능력치 자연 변화 (C05): 건강·관계·행복·지식이 목표값으로 조금씩 이동
 		naturalChange(life);
 		fixStats(life);
 
@@ -175,7 +217,7 @@ public class EngineService {
 			life.setStageCode(newStage);
 			life.setFocusCode(null);
 			life.setNeedFocus(true);
-			life.setFocusOptions(focusOptions(newStage));
+			life.setFocusOptions(focusOptions(newStage, life));
 		}
 
 		// 4. 저장 + 그해 기록
@@ -193,7 +235,7 @@ public class EngineService {
 		if (life == null || !life.getStatus().equals("PLAYING") || life.getStageCode() == null) {
 			return null;
 		}
-		if (!focusOptions(life.getStageCode()).contains(focusCode)) {
+		if (!focusOptions(life.getStageCode(), life).contains(focusCode)) {
 			return null;
 		}
 		life.setFocusCode(focusCode);
@@ -231,14 +273,14 @@ public class EngineService {
 			life.setStageCode(newStage);
 			life.setFocusCode(null);
 			life.setNeedFocus(true);
-			life.setFocusOptions(focusOptions(newStage));
+			life.setFocusOptions(focusOptions(newStage, life));
 		}
 		engineDao.updateLifeYear(life);
 		life.setJobName(job.getJobName());
 		return life;
 	}
 
-	// 나이대 판정
+	// 나이대 판정 (원작 기준)
 	private String stageOf(LifeDTO life) {
 		int age = life.getCurrentAge();
 		String level = life.getEduLevel();
@@ -253,55 +295,51 @@ public class EngineService {
 		if (enrolled) {
 			return "STUDENT"; // 초·중·고 학생
 		}
-		if ("RETIRED".equals(life.getJobStatus()) || age >= 65 && !"EMPLOYED".equals(life.getJobStatus())) {
-			return "SENIOR"; // 노년 (65세 이상 또는 은퇴)
+		if (age >= 65 || "RETIRED".equals(life.getJobStatus())) {
+			return "SENIOR"; // 노년 (65세 이상 또는 은퇴, 일하고 있으면 '일에 몰두' 추가)
 		}
 		if ("EMPLOYED".equals(life.getJobStatus())) {
-			return "WORKER"; // 직장인 (15세 이상, 직업 있음)
+			return "WORKER"; // 직장인
 		}
-		if (age < 18) {
-			return "YOUTH"; // 학교 안 다니는 청소년
+		if (age < 15) {
+			return "YOUTH"; // 학교 안 다니는 아이 (6~14세)
 		}
-		if (age < 65) {
-			return "JOBLESS";
-		}
-		return "SENIOR";
+		return "JOBLESS"; // 일이 없는 15세 이상
 	}
 
-	// 나이대별로 고를 수 있는 집중 목록
-	private List<String> focusOptions(String stage) {
+	// 나이대별로 고를 수 있는 집중 목록 (원작 기준)
+	private List<String> focusOptions(String stage, LifeDTO life) {
 		List<String> list = new ArrayList<>();
 		if (stage.equals("STUDENT")) {
 			list.add("STUDY"); list.add("PLAY"); list.add("HOUSE"); list.add("SPORT"); list.add("HOBBY");
 		} else if (stage.equals("YOUTH")) {
 			list.add("HOUSE"); list.add("PLAY"); list.add("SPORT"); list.add("HOBBY");
 		} else if (stage.equals("UNIV")) {
-			list.add("STUDY"); list.add("PARTTIME"); list.add("JOB_PREP"); list.add("SPORT"); list.add("HOBBY");
+			list.add("STUDY"); list.add("PLAY"); list.add("PARTTIME"); list.add("JOB_PREP"); list.add("SPORT"); list.add("HOBBY");
 		} else if (stage.equals("WORKER")) {
-			list.add("WORK"); list.add("BALANCE"); list.add("FAMILY"); list.add("HEALTH"); list.add("SELF_DEV");
+			list.add("WORK"); list.add("BALANCE"); list.add("FAMILY"); list.add("HEALTH"); list.add("SELF_DEV"); list.add("HOBBY");
 		} else if (stage.equals("JOBLESS")) {
 			list.add("FAMILY"); list.add("HEALTH"); list.add("SELF_DEV"); list.add("HOBBY"); list.add("REST");
 		} else if (stage.equals("SENIOR")) {
-			list.add("FAMILY"); list.add("HEALTH"); list.add("BRAIN"); list.add("HOBBY"); list.add("REST");
+			if ("EMPLOYED".equals(life.getJobStatus())) {
+				list.add("WORK"); list.add("FAMILY"); list.add("HEALTH"); list.add("BRAIN"); list.add("HOBBY");
+			} else {
+				list.add("FAMILY"); list.add("HEALTH"); list.add("BRAIN"); list.add("HOBBY"); list.add("REST");
+			}
 		}
 		return list;
 	}
 
-	// 고르지 않았을 때 나이대 기본값
-	private String defaultFocus(String stage) {
-		if (stage.equals("STUDENT") || stage.equals("UNIV")) {
-			return "STUDY";
-		} else if (stage.equals("YOUTH")) {
-			return "HOUSE";
-		} else if (stage.equals("WORKER")) {
+	// 고르지 않았을 때 기본값 (원작 기준): 목록에 '균형'이 있으면 균형, 없으면 목록 첫 번째
+	private String defaultFocus(LifeDTO life) {
+		List<String> list = focusOptions(life.getStageCode(), life);
+		if (list.contains("BALANCE")) {
 			return "BALANCE";
-		} else if (stage.equals("JOBLESS")) {
-			return "SELF_DEV";
 		}
-		return "HEALTH"; // SENIOR
+		return list.get(0);
 	}
 
-	// 집중별 1년 능력치 효과 (건강, 행복, 지식, 관계)
+	// 집중별 1년 능력치 효과 (원작 수치: 건강, 행복, 지식, 관계)
 	private void applyFocus(LifeDTO life) {
 		String f = life.getFocusCode();
 		if (f == null) {
@@ -309,20 +347,20 @@ public class EngineService {
 		}
 		double hl = 0, hp = 0, kn = 0, re = 0;
 		switch (f) {
-		case "STUDY":    kn = 5; hp = -1; re = -1; break;  // 공부
-		case "PLAY":     re = 4; hp = 4;           break;  // 친구·놀이
-		case "HOUSE":    re = 2; kn = 1; hp = -1;  break;  // 집안 돕기
-		case "SPORT":    hl = 4; hp = 2;           break;  // 운동
-		case "HOBBY":    hp = 4; kn = 1;           break;  // 취미
-		case "PARTTIME": hp = -1; re = 2;          break;  // 아르바이트 (소득은 C06)
-		case "JOB_PREP": kn = 3; hp = -2;          break;  // 취업 준비 (준비 점수는 C06)
-		case "WORK":     hl = -3; hp = -2; re = -2; break; // 일에 몰두 (승진은 C06)
-		case "BALANCE":  hl = 1; hp = 1; re = 1;   break;  // 균형
-		case "FAMILY":   re = 4; hp = 3;           break;  // 가족·친구
-		case "HEALTH":   hl = 4; hp = 1;           break;  // 건강 관리
-		case "SELF_DEV": kn = 3; hp = -1;          break;  // 자기계발
-		case "BRAIN":    kn = 2; hl = 1;           break;  // 두뇌 활동
-		case "REST":     hp = 3; hl = 2; kn = -1;  break;  // 휴식
+		case "STUDY":    kn = 5; hp = -1; re = -1;  break; // 공부
+		case "PLAY":     re = 4; hp = 4;            break; // 친구·놀이
+		case "HOUSE":    re = 2; kn = -1;           break; // 집안 돕기
+		case "SPORT":    hl = 4; hp = 2; re = 1;    break; // 운동
+		case "HOBBY":    hp = 4;                    break; // 취미
+		case "PARTTIME": kn = -1; hp = -1; re = 1;  break; // 아르바이트 (소득은 C06)
+		case "JOB_PREP": kn = 2; hp = -2;           break; // 취업 준비 (준비 점수는 C06)
+		case "WORK":     hl = -3; hp = -2; re = -2; break; // 일에 몰두 (소득 배율은 C06)
+		case "BALANCE":  hl = 1; hp = 1; re = 1;    break; // 균형
+		case "FAMILY":   re = 5; hp = 3;            break; // 가족·친구
+		case "HEALTH":   hl = 5; hp = 1;            break; // 건강 관리
+		case "SELF_DEV": kn = 4; hp = -1;           break; // 자기계발
+		case "BRAIN":    kn = 3; hp = 1; re = 1;    break; // 두뇌 활동
+		case "REST":     hl = 2; hp = 2; kn = -1;   break; // 휴식
 		}
 		life.setHealth(life.getHealth() + hl);
 		life.setHappiness(life.getHappiness() + hp);
@@ -332,13 +370,80 @@ public class EngineService {
 
 	// ================= C05 능력치 =================
 
-	// 자연 변화: 지식은 매년 -1 (공부를 멈추면 또래에 밀림), 건강은 50세부터 매년 -1
-	private void naturalChange(LifeDTO life) {
-		if (life.getCurrentAge() >= 6) {
-			life.setKnowledge(life.getKnowledge() - 1);
+	// 나이별 기대 건강 (원작 기준): 0세 72, 1~4세 80, 5~29세 90, 30~59세 매년 -0.6, 60세부터 매년 -0.95 (최소 15)
+	private double expHealth(int age) {
+		if (age < 1) {
+			return 72;
+		} else if (age < 5) {
+			return 80;
+		} else if (age < 30) {
+			return 90;
+		} else if (age < 60) {
+			return 90 - (age - 30) * 0.6;
 		}
-		if (life.getCurrentAge() >= 50) {
-			life.setHealth(life.getHealth() - 1);
+		return Math.max(15, 72 - (age - 60) * 0.95);
+	}
+
+	// 자연 변화 (원작 기준)
+	private void naturalChange(LifeDTO life) {
+		int age = life.getCurrentAge();
+		double c = Math.min(1, Math.max(0, (age - 14) / 6.0)); // 15~20세에 걸쳐 어른 기준으로 바뀜
+
+		// 1. 건강: 목표 = 기대 건강 + 가정형편 보정 + 건강 관리 집중, 매년 차이의 25%만큼 이동
+		double healthGoal = expHealth(age + 1) + (life.getWealthClass() - 3) * 1.5;
+		if ("HEALTH".equals(life.getFocusCode())) {
+			healthGoal = healthGoal + 6;
+		}
+		life.setHealth(life.getHealth() + (healthGoal - life.getHealth()) * 0.25);
+
+		// 2. 관계: 목표 = 45 + 결혼 12 + 자녀 수×4(최대 15) + 부모 생존 3 - 이민 6 (어른은 -8)
+		double relGoal = 45;
+		if ("Y".equals(life.getMarriedYn())) {
+			relGoal = relGoal + 12;
+		}
+		relGoal = relGoal + Math.min(15, life.getChildCount() * 4);
+		if ("Y".equals(life.getParentAlive())) {
+			relGoal = relGoal + 3;
+		}
+		if (!life.getBirthCountry().equals(life.getCurrentCountry())) {
+			relGoal = relGoal - 6;
+		}
+		relGoal = relGoal - 8 * c;
+		double relRate = 0.12;
+		if (life.getRelation() > relGoal) {
+			relRate = 0.12 + (0.25 - 0.12) * c; // 어른은 높은 관계가 더 빨리 내려옴
+		}
+		life.setRelation(life.getRelation() + (relGoal - life.getRelation()) * relRate);
+
+		// 3. 행복: 목표 = 기본 55.5 + 형편 보정 + 관계 보정 + 건강 보정 - 빚 (어른은 -12)
+		double hapGoal = 55.5;
+		if (age >= 18 && !"ENROLLED".equals(life.getSchoolStatus())) {
+			hapGoal = hapGoal + ((life.getWealthClass() - 0.5) / 5 - 0.5) * 18; // 어른: 경제적 위치
+		} else {
+			hapGoal = hapGoal + (life.getWealthClass() - 3) * 3; // 아이: 가정형편
+		}
+		hapGoal = hapGoal + (life.getRelation() - 50) * 0.25 + (life.getHealth() - expHealth(age + 1)) * 0.2;
+		if (life.getAssets() < 0) {
+			hapGoal = hapGoal - 1;
+		}
+		hapGoal = hapGoal - 12 * c;
+		double hapRate = 0.22 + ((life.getHappiness() > hapGoal ? 0.35 : 0.2) - 0.22) * c;
+		life.setHappiness(life.getHappiness() + (hapGoal - life.getHappiness()) * hapRate);
+
+		// 4. 지식 (원작 기준): 지식은 "또래 가운데 어디쯤인지"라서
+		//    공부를 안 하면 또래 평균(50) 쪽으로 밀려남 (25세 전 매년 3%, 그 후 1.5%)
+		if (age >= 6) {
+			double keep = age < 25 ? 0.03 : 0.015;
+			life.setKnowledge(life.getKnowledge() + (50 - life.getKnowledge()) * keep);
+
+			// 학교 안 다니는 6~17세는 학교 다니는 또래보다 뒤처짐
+			if (age <= 17 && !"ENROLLED".equals(life.getSchoolStatus())) {
+				life.setKnowledge(life.getKnowledge() - 2);
+			}
+			// 73세부터는 두뇌 활동을 안 하면 조금씩 감소
+			if (age > 72 && !"BRAIN".equals(life.getFocusCode())) {
+				life.setKnowledge(life.getKnowledge() - 1);
+			}
 		}
 	}
 
@@ -506,8 +611,8 @@ public class EngineService {
 	// 마친 학력 단계 (졸업했으면 그 단계, 재학·중퇴면 그 전 단계, 없으면 -1)
 	private int finishedLevel(LifeDTO life) {
 		int idx = levelIndex(life.getEduLevel());
-		if ("GRADUATED".equals(life.getSchoolStatus())) {
-			return idx;
+		if (idx == -1 || "GRADUATED".equals(life.getSchoolStatus())) {
+			return idx; // 학교를 안 다녔으면 -1 (학력 없음)
 		}
 		return idx - 1;
 	}
@@ -700,8 +805,10 @@ public class EngineService {
 		// 그해 사는 나라 통계 (없으면 기본값: 기대수명 70, 영아사망률 30‰)
 		double lifeExpectancy = 70;
 		double infantMortality = 30;
+		Double u5Mortality = null;
 		String region = "";
 		if (stat != null) {
+			u5Mortality = stat.getU5Mortality();
 			if (stat.getLifeExpectancy() != null) {
 				lifeExpectancy = stat.getLifeExpectancy();
 			}
@@ -719,13 +826,20 @@ public class EngineService {
 			// 0세: 영아사망률 (‰ → 확률)
 			p = infantMortality / 1000;
 		} else if (age < 5) {
-			// 1~4세: 4년 동안 영아사망률의 30% 정도가 나뉘어 발생
-			p = infantMortality / 1000 * 0.3 / 4;
+			// 1~4세 (명세서): 5세 미만 사망률에서 영아사망을 뺀 나머지를 0.40·0.27·0.19·0.14 비율로 나눔
+			//   1세를 넘긴 아이 기준 확률이라 (1 - 영아사망률)로 나눔
+			//   5세 미만 사망률 데이터가 없으면 영아사망률의 30%로 추정
+			double rest = infantMortality * 0.3;
+			if (u5Mortality != null && u5Mortality > infantMortality) {
+				rest = u5Mortality - infantMortality;
+			}
+			double[] share = { 0, 0.40, 0.27, 0.19, 0.14 };
+			p = rest / 1000 * share[age] / (1 - infantMortality / 1000);
 		} else {
 			// 5세 이상: 나이가 들수록 빠르게 커지는 곡선
 			// 기대수명이 낮은 나라·시대일수록 곡선이 앞당겨짐
 			double shift = (75 - lifeExpectancy) * 0.75;
-			p = 0.00005 * Math.exp(0.09 * (age + shift));
+			p = 0.000065 * Math.exp(0.09 * (age + shift));
 		}
 
 		// 2. 성별: 남자 ×1.08, 여자 ×0.92
@@ -735,11 +849,15 @@ public class EngineService {
 			p = p * 0.92;
 		}
 
-		// 3. 그해 사망 배율 (건강 × 가정형편)
-		// 건강: 기준 건강(49세까지 60, 50세부터 매년 -1)보다 낮으면 위험
-		double baseHealth = 60;
-		if (age >= 50) {
-			baseHealth = 60 - (age - 50);
+		if (p > 1) {
+			p = 1;
+		}
+
+		// 3. 그해 사망 배율 (원작 기준)
+		// 건강: e^((기대 건강 - 6 - 50세 이후 (나이-50)×0.08 - 내 건강) × 0.03), 5세 미만 0.02, 최소 0.5
+		double baseHealth = expHealth(age) - 6;
+		if (age > 50) {
+			baseHealth = baseHealth - (age - 50) * 0.08;
 		}
 		double k = 0.03;
 		if (age < 5) {
@@ -750,14 +868,19 @@ public class EngineService {
 			healthRate = 0.5;
 		}
 
-		// 가정형편: 형편이 좋을수록 위험 감소 (남아시아 0.25, 서아시아 0.15, 그 외 0.2)
+		// 가정형편: e^(-r × (분위 - 3)) ÷ 1~5분위 평균 (남아시아 0.25, 서아시아 0.15, 그 외 0.2)
 		double r = 0.2;
 		if (region.equals("SOUTH")) {
 			r = 0.25;
 		} else if (region.equals("WEST")) {
 			r = 0.15;
 		}
-		double wealthRate = Math.exp(-r * (life.getWealthClass() - 3));
+		double avg = 0;
+		for (int d = 1; d <= 5; d++) {
+			avg = avg + Math.exp(-r * (d - 3));
+		}
+		avg = avg / 5;
+		double wealthRate = Math.exp(-r * (life.getWealthClass() - 3)) / avg;
 
 		double rate = healthRate * wealthRate;
 		if (rate < 0.25) {
@@ -767,15 +890,17 @@ public class EngineService {
 			rate = 9;
 		}
 
-		// 85세 이상은 배율 효과를 점점 줄임 (100세에 효과 없음)
+		// 85세 이상은 배율 효과를 점점 줄임
 		if (age >= 85) {
-			double weaken = (100 - age) / 15.0;
-			if (weaken < 0) {
-				weaken = 0;
+			double weaken = 1 - (age - 85) / 20.0;
+			if (weaken < 0.3) {
+				weaken = 0.3;
 			}
-			rate = 1 + (rate - 1) * weaken;
+			rate = Math.pow(rate, weaken);
 		}
-		p = p * rate;
+
+		// 배율 적용: 1 - (1 - 기본 확률)^배율 (확률이 1을 넘지 않게)
+		p = 1 - Math.pow(1 - p, rate);
 
 		// 110세 이상은 무조건 사망, 확률은 0 ~ 1 사이로
 		if (age >= 110 || p > 1) {
@@ -855,5 +980,15 @@ public class EngineService {
 			score = score + 5; // 대학원 재학·중퇴여도 대학은 졸업
 		}
 		life.setLifeScore(Math.round(score * 10) / 10.0);
+
+		// 소득 상위 % = 100 - (내 평균 소득보다 1인당 GDP가 낮은 나라에 사는 인구 비율)
+		Double poorer = engineDao.selectPoorerPct(life);
+		if (poorer != null) {
+			double top = 100 - poorer;
+			if (top < 0.1) {
+				top = 0.1; // 상위 0.1% 미만은 0.1%로 표시
+			}
+			life.setIncomeTopPct(Math.round(top * 10) / 10.0);
+		}
 	}
 }

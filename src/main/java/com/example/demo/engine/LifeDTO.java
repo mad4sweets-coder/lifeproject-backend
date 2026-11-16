@@ -20,6 +20,9 @@ public class LifeDTO {
 	private double happiness;	// 행복
 	private double knowledge;	// 지식
 	private double relation;	// 관계
+	private String marriedYn;	// 결혼 여부 Y, N (C09, IS_MARRIED)
+	private int childCount;	// 자녀 수 (C09)
+	private String parentAlive;	// 부모 생존 Y, N (C09)
 	private String eduLevel;	// 학력 NONE, ELEM, MIDDLE, HIGH, UNI, GRAD (C06)
 	private String schoolStatus;	// 재학 상태 ENROLLED, GRADUATED, DROPPED (C06)
 	private String dropReason;	// 중퇴 사유 (C06)
@@ -37,6 +40,7 @@ public class LifeDTO {
 	private String deathCause;	// 사망 원인 (C07)
 	private Long avgIncome;	// 평균 소득 (C07 최종 결과)
 	private Double lifeScore;	// 인생 점수 (C07 최종 결과)
+	private Double incomeTopPct;	// 소득 상위 % (C07 최종 결과)
 	private boolean needFocus;	// [화면용] 집중 선택 창 띄우기 (C04)
 	private List<String> focusOptions;	// [화면용] 고를 수 있는 집중 목록 (C04)
 	private boolean needJob;	// [화면용] 직업 선택 창 띄우기 (C06)
@@ -182,6 +186,30 @@ public class LifeDTO {
 
 	public void setRelation(double relation) {
 		this.relation = relation;
+	}
+
+	public String getMarriedYn() {
+		return marriedYn;
+	}
+
+	public void setMarriedYn(String marriedYn) {
+		this.marriedYn = marriedYn;
+	}
+
+	public int getChildCount() {
+		return childCount;
+	}
+
+	public void setChildCount(int childCount) {
+		this.childCount = childCount;
+	}
+
+	public String getParentAlive() {
+		return parentAlive;
+	}
+
+	public void setParentAlive(String parentAlive) {
+		this.parentAlive = parentAlive;
 	}
 
 	public String getEduLevel() {
@@ -398,6 +426,14 @@ public class LifeDTO {
 
 	public void setGdpPerCapita(Double gdpPerCapita) {
 		this.gdpPerCapita = gdpPerCapita;
+	}
+
+	public Double getIncomeTopPct() {
+		return incomeTopPct;
+	}
+
+	public void setIncomeTopPct(Double incomeTopPct) {
+		this.incomeTopPct = incomeTopPct;
 	}
 
 }

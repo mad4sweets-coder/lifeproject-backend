@@ -14,12 +14,14 @@ public interface EngineDao {
 	String selectHistName(LifeDTO life);
 	int selectNextLifeId();
 	int abandonGuestLife(String guestToken);
+	int abandonMemberLife(int memberId);
 	int moveOldGuestStats();
 	int deleteOldGuestLives();
 	int insertLife(LifeDTO life);
 
 	// C03 1년 진행
 	LifeDTO selectLife(int lifeId);
+	LifeDTO selectPlayingLife(LifeDTO cond);
 	int updateLifeYear(LifeDTO life);
 	int insertYearLog(LifeDTO life);
 
@@ -28,6 +30,7 @@ public interface EngineDao {
 	int endLife(LifeDTO life);
 	List<DeathCauseDTO> selectDeathCauses(DeathCauseDTO cond);
 	Long selectAvgIncome(int lifeId);
+	Double selectPoorerPct(LifeDTO life);
 
 	// C04 집중 선택
 	int updateFocus(LifeDTO life);
