@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+	"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.demo.engine.EngineDao">
+
+	<!-- DB 연결 테스트 -->
+	<select id="selectNow" resultType="string">
+		SELECT TO_CHAR(SYSDATE, 'YYYY-MM-DD HH24:MI:SS') FROM dual
+	</select>
+
+	<!-- C02: 그 연대에 태어날 수 있는 나라 + 통계 -->
+	<select id="selectBirthCountries" parameterType="int"
+		resultType="com.example.demo.engine.CountryStatVO">
+		SELECT c.COUNTRY_CODE     AS countryCode,
+		       c.NAME_KO          AS nameKo,
+		       s.BIRTHS           AS births,
+		       s.LIFE_EXPECTANCY  AS lifeExpectancy,
+		       s.INFANT_MORTALITY AS infantMortality,
+		       s.GDP_PER_CAPITA   AS gdpPerCapita,
+		       s.URBAN_RATE       AS urbanRate,
+		       s.SEX_RATIO_BIRTH  AS sexRatioBirth
+		FROM COUNTRY c
+		JOIN COUNTRY_STAT s ON c.COUNTRY_CODE = s.COUNTRY_CODE
+		WHERE c.IS_ACTIVE = 'Y'
+		  AND s.DECADE = #{decade}
+		  AND s.BIRTHS > 0
+	</select>
+
+	<!-- C02: 나라·성별 이름 랜덤 1개 -->
+	<select id="selectRandomName" parameterType="com.example.demo.engine.LifeVO"
+		resultType="string">
+		SELECT PERSON_NAME FROM (
+			SELECT PERSON_NAME
+			FROM PERSON_NAME
+			WHERE COUNTRY_CODE = #{birthCountry}
+			  AND GENDER = #{gender}
+			ORDER BY DBMS_RANDOM.VALUE
+		)
+		WHERE ROWNUM = 1
+	</select>
+
+	<!-- C02: 당시 국가명 -->
+	<select id="selectHistName" parameterType="com.example.demo.engine.LifeVO"
+		resultType="string">
+		SELECT HIST_NAME
+		FROM COUNTRY_NAME_HIST
+		WHERE COUNTRY_CODE = #{birthCountry}
+		  AND START_YEAR &lt;= #{birthYear}
+		  AND (END_YEAR IS NULL OR END_YEAR &gt;= #{birthYear})
+		  AND ROWNUM = 1
+	</select>
+
+	<!-- C02: 인생 번호 -->
+	<select id="selectNextLifeId" resultType="int">
+		SELECT SEQ_LIFE.NEXTVAL FROM dual
+	</select>
+
+	<!-- C02: 진행 중이던 비회원 인생 포기 처리 -->
+	<update id="abandonGuestLife" parameterType="string">
+		UPDATE LIFE
+		SET STATUS = 'ABANDONED', ENDED_AT = SYSDATE
+		WHERE GUEST_TOKEN = #{guestToken}
+		  AND STATUS = 'PLAYING'
+	</update>
+
+	<!-- C02: 인생 저장 (나머지 컬럼은 DEFAULT 값) -->
+	<insert id="insertLife" parameterType="com.example.demo.engine.LifeVO">
+		INSERT INTO LIFE (
+			LIFE_ID, MEMBER_ID, GUEST_TOKEN, START_TYPE,
+			NAME, GENDER, BIRTH_COUNTRY, CURRENT_COUNTRY, BIRTH_YEAR,
+			WEALTH_CLASS, IS_URBAN,
+			HEALTH, HAPPINESS, KNOWLEDGE, RELATION
+		) VALUES (
+			#{lifeId}, #{memberId, jdbcType=NUMERIC}, #{guestToken, jdbcType=VARCHAR}, #{startType},
+			#{name}, #{gender}, #{birthCountry}, #{currentCountry}, #{birthYear},
+			#{wealthClass}, #{isUrban},
+			#{health}, #{happiness}, #{knowledge}, #{relation}
+		)
+	</insert>
+
+</mapper>
