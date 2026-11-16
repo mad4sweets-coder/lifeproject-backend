@@ -61,10 +61,10 @@ public class MemberController {
 	}
 
 	// 로그인 (M02)  POST /api/members/login
-	// 보내는 JSON: { loginId, password }
-	// 돌려주는 JSON: { token, nickname, memberRole }
+	// 보내는 JSON: { loginId, password, guestToken }
+	// 돌려주는 JSON: { token, nickname, memberRole, guestConverted }
 	@PostMapping("/login")
-	public ResponseEntity<?> login(@RequestBody MemberDTO dto) {
+	public ResponseEntity<?> login(@RequestBody MemberLoginDTO dto) {
 		MemberDTO member = service.login(dto.getLoginId(), dto.getPassword());
 
 		// 어느 쪽이 틀렸는지는 알려주지 않음 (M02 규칙)
@@ -73,12 +73,16 @@ public class MemberController {
 					.body(Map.of("message", "아이디 또는 비밀번호가 올바르지 않습니다."));
 		}
 
+		// 이 브라우저에서 비회원으로 하던 인생이 있으면 회원 인생으로 전환
+		boolean converted = service.convertGuestLife(member.getMemberId(), dto.getGuestToken());
+
 		// 토큰 안에는 회원 번호만 넣음 (비밀번호·이메일은 넣지 않음)
 		String token = jwtUtil.createToken(String.valueOf(member.getMemberId()));
 
 		return ResponseEntity.ok(Map.of(
 				"token", token,
 				"nickname", member.getNickname(),
-				"memberRole", member.getMemberRole()));
+				"memberRole", member.getMemberRole(),
+				"guestConverted", converted));
 	}
 }
