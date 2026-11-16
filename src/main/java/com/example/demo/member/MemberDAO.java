@@ -1,24 +1,41 @@
 package com.example.demo.member;
 
-import org.apache.ibatis.annotations.Mapper;
+import org.mybatis.spring.SqlSessionTemplate;
+import org.springframework.stereotype.Repository;
 
-// DB에 SQL을 보내는 창구 (MyBatis)
-// 메서드 이름 = member-mapper.xml 의 id 와 똑같아야 한다
-@Mapper
-public interface MemberDAO {
+
+@Repository
+public class MemberDAO {
+
+	private final SqlSessionTemplate mybatis;
+
+	// 스프링이 MyBatis 실행기(SqlSessionTemplate)를 넣어 줌
+	public MemberDAO(SqlSessionTemplate mybatis) {
+		this.mybatis = mybatis;
+	}
 
 	// 아이디 중복 확인 → 같은 아이디 개수 (0이면 사용 가능)
-	int countByLoginId(String loginId);
+	public int countByLoginId(String loginId) {
+		return mybatis.selectOne("member.countByLoginId", loginId);
+	}
 
 	// 닉네임 중복 확인
-	int countByNickname(String nickname);
+	public int countByNickname(String nickname) {
+		return mybatis.selectOne("member.countByNickname", nickname);
+	}
 
 	// 이메일 중복 확인
-	int countByEmail(String email);
+	public int countByEmail(String email) {
+		return mybatis.selectOne("member.countByEmail", email);
+	}
 
 	// 회원 1줄 INSERT (실행 후 dto.memberId 에 새 번호가 채워짐)
-	int insertMember(MemberDTO dto);
+	public int insertMember(MemberDTO dto) {
+		return mybatis.insert("member.insertMember", dto);
+	}
 
 	// 새 회원의 특성 4종(INVEST, DISEASE, LOVE, STUDY)을 Lv.1로 INSERT
-	int insertDefaultTraits(int memberId);
+	public int insertDefaultTraits(int memberId) {
+		return mybatis.insert("member.insertDefaultTraits", memberId);
+	}
 }
