@@ -24,4 +24,7 @@ public interface EngineDao {
 	// C07 사망 판정
 	CountryStatDTO selectYearStat(LifeDTO life);
 	int endLife(LifeDTO life);
+
+	// C04 집중 선택
+	int updateFocus(LifeDTO life);
 }

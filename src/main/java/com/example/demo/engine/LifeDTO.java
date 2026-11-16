@@ -1,5 +1,7 @@
 package com.example.demo.engine;
 
+import java.util.List;
+
 public class LifeDTO {
 	private int lifeId;	// 인생 번호
 	private Integer memberId;	// 회원 번호 (비회원 null)
@@ -18,8 +20,12 @@ public class LifeDTO {
 	private double happiness;	// 행복
 	private double knowledge;	// 지식
 	private double relation;	// 관계
+	private String stageCode;	// 나이대 (C04)
+	private String focusCode;	// 집중 선택 (C04)
 	private Integer deathAge;	// 사망 나이 (C07)
 	private String deathCause;	// 사망 원인 (C07)
+	private boolean needFocus;	// [화면용] 집중 선택 창 띄우기 (C04)
+	private List<String> focusOptions;	// [화면용] 고를 수 있는 집중 목록 (C04)
 	private String countryName;	// [화면용] 나라 이름
 	private String histName;	// [화면용] 당시 국가명
 	private Double lifeExpectancy;	// [화면용] 기대수명
@@ -162,6 +168,22 @@ public class LifeDTO {
 		this.relation = relation;
 	}
 
+	public String getStageCode() {
+		return stageCode;
+	}
+
+	public void setStageCode(String stageCode) {
+		this.stageCode = stageCode;
+	}
+
+	public String getFocusCode() {
+		return focusCode;
+	}
+
+	public void setFocusCode(String focusCode) {
+		this.focusCode = focusCode;
+	}
+
 	public Integer getDeathAge() {
 		return deathAge;
 	}
@@ -176,6 +198,22 @@ public class LifeDTO {
 
 	public void setDeathCause(String deathCause) {
 		this.deathCause = deathCause;
+	}
+
+	public boolean isNeedFocus() {
+		return needFocus;
+	}
+
+	public void setNeedFocus(boolean needFocus) {
+		this.needFocus = needFocus;
+	}
+
+	public List<String> getFocusOptions() {
+		return focusOptions;
+	}
+
+	public void setFocusOptions(List<String> focusOptions) {
+		this.focusOptions = focusOptions;
 	}
 
 	public String getCountryName() {

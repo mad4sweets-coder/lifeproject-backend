@@ -1,6 +1,7 @@
 package com.example.demo.engine;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 import java.util.UUID;
@@ -124,9 +125,15 @@ public class EngineService {
 			return null;
 		}
 
-		// 2. 앞으로 여기에 순서대로 붙일 자리
-		// ① 집중 효과 (C04)
-		// ② 능력치 변화 (C05)
+		// ① 집중 효과 (C04): 고르지 않았으면 나이대 기본값
+		if (life.getStageCode() != null && life.getFocusCode() == null) {
+			life.setFocusCode(defaultFocus(life.getStageCode()));
+		}
+		applyFocus(life);
+
+		// ② 능력치 범위 정리 (C05): 0 ~ 100
+		fixStats(life);
+
 		// ③ 학교·직업 (C06)
 		// ④ 소득·재산 (C06)
 		// ⑤ 인생·역사 이벤트 (C09, C10 - 장윤아님)
@@ -140,12 +147,136 @@ public class EngineService {
 			return life;
 		}
 
-		// 3. 살아남으면 나이 +1, 저장 + 그해 기록
+		// 2. 살아남으면 나이 +1
 		life.setCurrentAge(life.getCurrentAge() + 1);
+
+		// 3. 나이대가 바뀌면 집중을 비우고 선택 창 띄우기 (C04)
+		String newStage = stageOf(life);
+		if (newStage != null && !newStage.equals(life.getStageCode())) {
+			life.setStageCode(newStage);
+			life.setFocusCode(null);
+			life.setNeedFocus(true);
+			life.setFocusOptions(focusOptions(newStage));
+		}
+
+		// 4. 저장 + 그해 기록
 		engineDao.updateLifeYear(life);
 		engineDao.insertYearLog(life);
 
 		return life;
+	}
+
+	// ================= C04 나이대별 집중 선택 =================
+
+	// 집중 선택 저장 (그 나이대에서 고를 수 있는 것만)
+	public LifeDTO chooseFocus(int lifeId, String focusCode) {
+		LifeDTO life = engineDao.selectLife(lifeId);
+		if (life == null || !life.getStatus().equals("PLAYING") || life.getStageCode() == null) {
+			return null;
+		}
+		if (!focusOptions(life.getStageCode()).contains(focusCode)) {
+			return null;
+		}
+		life.setFocusCode(focusCode);
+		engineDao.updateFocus(life);
+		return life;
+	}
+
+	// 나이대 판정
+	// ※ 지금은 나이로만 판정 (6~17 학생, 18~64 무직 성인, 65~ 노년)
+	// ※ 대학생(UNIV)·직장인(WORKER)·비학생 청소년(YOUTH)은 C06 진학·직업 붙일 때 추가
+	private String stageOf(LifeDTO life) {
+		int age = life.getCurrentAge();
+		if (age < 6) {
+			return null; // 0~5세는 집중 선택 없음
+		} else if (age < 18) {
+			return "STUDENT";
+		} else if (age < 65) {
+			return "JOBLESS";
+		}
+		return "SENIOR";
+	}
+
+	// 나이대별로 고를 수 있는 집중 목록
+	private List<String> focusOptions(String stage) {
+		List<String> list = new ArrayList<>();
+		if (stage.equals("STUDENT")) {
+			list.add("STUDY"); list.add("PLAY"); list.add("HOUSE"); list.add("SPORT"); list.add("HOBBY");
+		} else if (stage.equals("YOUTH")) {
+			list.add("HOUSE"); list.add("PLAY"); list.add("SPORT"); list.add("HOBBY");
+		} else if (stage.equals("UNIV")) {
+			list.add("STUDY"); list.add("PARTTIME"); list.add("JOB_PREP"); list.add("SPORT"); list.add("HOBBY");
+		} else if (stage.equals("WORKER")) {
+			list.add("WORK"); list.add("BALANCE"); list.add("FAMILY"); list.add("HEALTH"); list.add("SELF_DEV");
+		} else if (stage.equals("JOBLESS")) {
+			list.add("FAMILY"); list.add("HEALTH"); list.add("SELF_DEV"); list.add("HOBBY"); list.add("REST");
+		} else if (stage.equals("SENIOR")) {
+			list.add("FAMILY"); list.add("HEALTH"); list.add("BRAIN"); list.add("HOBBY"); list.add("REST");
+		}
+		return list;
+	}
+
+	// 고르지 않았을 때 나이대 기본값
+	private String defaultFocus(String stage) {
+		if (stage.equals("STUDENT") || stage.equals("UNIV")) {
+			return "STUDY";
+		} else if (stage.equals("YOUTH")) {
+			return "HOUSE";
+		} else if (stage.equals("WORKER")) {
+			return "BALANCE";
+		} else if (stage.equals("JOBLESS")) {
+			return "SELF_DEV";
+		}
+		return "HEALTH"; // SENIOR
+	}
+
+	// 집중별 1년 능력치 효과 (건강, 행복, 지식, 관계)
+	private void applyFocus(LifeDTO life) {
+		String f = life.getFocusCode();
+		if (f == null) {
+			return; // 0~5세
+		}
+		double hl = 0, hp = 0, kn = 0, re = 0;
+		switch (f) {
+		case "STUDY":    kn = 5; hp = -1; re = -1; break;  // 공부
+		case "PLAY":     re = 4; hp = 4;           break;  // 친구·놀이
+		case "HOUSE":    re = 2; kn = 1; hp = -1;  break;  // 집안 돕기
+		case "SPORT":    hl = 4; hp = 2;           break;  // 운동
+		case "HOBBY":    hp = 4; kn = 1;           break;  // 취미
+		case "PARTTIME": hp = -1; re = 2;          break;  // 아르바이트 (소득은 C06)
+		case "JOB_PREP": kn = 3; hp = -2;          break;  // 취업 준비 (준비 점수는 C06)
+		case "WORK":     hl = -3; hp = -2; re = -2; break; // 일에 몰두 (승진은 C06)
+		case "BALANCE":  hl = 1; hp = 1; re = 1;   break;  // 균형
+		case "FAMILY":   re = 4; hp = 3;           break;  // 가족·친구
+		case "HEALTH":   hl = 4; hp = 1;           break;  // 건강 관리
+		case "SELF_DEV": kn = 3; hp = -1;          break;  // 자기계발
+		case "BRAIN":    kn = 2; hl = 1;           break;  // 두뇌 활동
+		case "REST":     hp = 3; hl = 2; kn = -1;  break;  // 휴식
+		}
+		life.setHealth(life.getHealth() + hl);
+		life.setHappiness(life.getHappiness() + hp);
+		life.setKnowledge(life.getKnowledge() + kn);
+		life.setRelation(life.getRelation() + re);
+	}
+
+	// ================= C05 능력치 =================
+
+	// 능력치를 0 ~ 100 사이로 맞추기
+	private void fixStats(LifeDTO life) {
+		life.setHealth(limit(life.getHealth()));
+		life.setHappiness(limit(life.getHappiness()));
+		life.setKnowledge(limit(life.getKnowledge()));
+		life.setRelation(limit(life.getRelation()));
+	}
+
+	private double limit(double v) {
+		if (v < 0) {
+			return 0;
+		}
+		if (v > 100) {
+			return 100;
+		}
+		return v;
 	}
 
 	// ================= C07 사망 판정 =================

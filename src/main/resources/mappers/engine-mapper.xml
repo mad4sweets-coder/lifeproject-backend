@@ -100,6 +100,8 @@
 		       HAPPINESS       AS happiness,
 		       KNOWLEDGE       AS knowledge,
 		       RELATION        AS relation,
+		       STAGE_CODE      AS stageCode,
+		       FOCUS_CODE      AS focusCode,
 		       STATUS          AS status
 		FROM LIFE
 		WHERE LIFE_ID = #{lifeId}
@@ -112,6 +114,8 @@
 		    HAPPINESS      = #{happiness},
 		    KNOWLEDGE      = #{knowledge},
 		    RELATION       = #{relation},
+		    STAGE_CODE     = #{stageCode, jdbcType=VARCHAR},
+		    FOCUS_CODE     = #{focusCode, jdbcType=VARCHAR},
 		    LAST_PLAYED_AT = SYSDATE
 		WHERE LIFE_ID = #{lifeId}
 	</update>
@@ -119,10 +123,11 @@
 	<insert id="insertYearLog" parameterType="com.example.demo.engine.LifeDTO">
 		INSERT INTO LIFE_YEAR_LOG (
 			LIFE_ID, AGE, YEAR_NO, COUNTRY_CODE,
-			HEALTH, HAPPINESS, KNOWLEDGE, RELATION
+			HEALTH, HAPPINESS, KNOWLEDGE, RELATION, FOCUS_CODE
 		) VALUES (
 			#{lifeId}, #{currentAge}, #{birthYear} + #{currentAge}, #{currentCountry},
-			ROUND(#{health}), ROUND(#{happiness}), ROUND(#{knowledge}), ROUND(#{relation})
+			ROUND(#{health}), ROUND(#{happiness}), ROUND(#{knowledge}), ROUND(#{relation}),
+			#{focusCode, jdbcType=VARCHAR}
 		)
 	</insert>
 
@@ -149,6 +154,15 @@
 		    DEATH_AGE      = #{deathAge},
 		    DEATH_CAUSE    = #{deathCause},
 		    ENDED_AT       = SYSDATE,
+		    LAST_PLAYED_AT = SYSDATE
+		WHERE LIFE_ID = #{lifeId}
+	</update>
+
+	<!-- ================= C04 집중 선택 ================= -->
+
+	<update id="updateFocus" parameterType="com.example.demo.engine.LifeDTO">
+		UPDATE LIFE
+		SET FOCUS_CODE     = #{focusCode},
 		    LAST_PLAYED_AT = SYSDATE
 		WHERE LIFE_ID = #{lifeId}
 	</update>
