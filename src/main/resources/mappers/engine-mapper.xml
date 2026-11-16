@@ -126,4 +126,31 @@
 		)
 	</insert>
 
+	<!-- ================= C07 사망 판정 ================= -->
+
+	<!-- 그해(출생 연도 + 나이) 사는 나라의 통계 (그 연대가 없으면 가장 가까운 연대) -->
+	<select id="selectYearStat" parameterType="com.example.demo.engine.LifeDTO"
+		resultType="com.example.demo.engine.CountryStatDTO">
+		SELECT * FROM (
+			SELECT COUNTRY_CODE     AS countryCode,
+			       LIFE_EXPECTANCY  AS lifeExpectancy,
+			       INFANT_MORTALITY AS infantMortality
+			FROM COUNTRY_STAT
+			WHERE COUNTRY_CODE = #{currentCountry}
+			ORDER BY ABS(DECADE - (#{birthYear} + #{currentAge}))
+		)
+		WHERE ROWNUM = 1
+	</select>
+
+	<!-- 사망 처리 -->
+	<update id="endLife" parameterType="com.example.demo.engine.LifeDTO">
+		UPDATE LIFE
+		SET STATUS         = 'ENDED',
+		    DEATH_AGE      = #{deathAge},
+		    DEATH_CAUSE    = #{deathCause},
+		    ENDED_AT       = SYSDATE,
+		    LAST_PLAYED_AT = SYSDATE
+		WHERE LIFE_ID = #{lifeId}
+	</update>
+
 </mapper>

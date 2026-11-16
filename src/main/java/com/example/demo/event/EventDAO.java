@@ -1,5 +1,8 @@
 package com.example.demo.event;
 
-public class EventDAO {
+import org.apache.ibatis.annotations.Mapper;
+
+@Mapper
+public interface EventDAO {
 
 }

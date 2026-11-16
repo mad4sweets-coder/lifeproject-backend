@@ -18,6 +18,8 @@ public class LifeDTO {
 	private double happiness;	// 행복
 	private double knowledge;	// 지식
 	private double relation;	// 관계
+	private Integer deathAge;	// 사망 나이 (C07)
+	private String deathCause;	// 사망 원인 (C07)
 	private String countryName;	// [화면용] 나라 이름
 	private String histName;	// [화면용] 당시 국가명
 	private Double lifeExpectancy;	// [화면용] 기대수명
@@ -158,6 +160,22 @@ public class LifeDTO {
 
 	public void setRelation(double relation) {
 		this.relation = relation;
+	}
+
+	public Integer getDeathAge() {
+		return deathAge;
+	}
+
+	public void setDeathAge(Integer deathAge) {
+		this.deathAge = deathAge;
+	}
+
+	public String getDeathCause() {
+		return deathCause;
+	}
+
+	public void setDeathCause(String deathCause) {
+		this.deathCause = deathCause;
 	}
 
 	public String getCountryName() {

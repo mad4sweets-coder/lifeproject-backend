@@ -20,4 +20,8 @@ public interface EngineDao {
 	LifeDTO selectLife(int lifeId);
 	int updateLifeYear(LifeDTO life);
 	int insertYearLog(LifeDTO life);
+
+	// C07 사망 판정
+	CountryStatDTO selectYearStat(LifeDTO life);
+	int endLife(LifeDTO life);
 }
