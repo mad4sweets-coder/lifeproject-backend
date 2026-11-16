@@ -24,7 +24,6 @@ public class EventTemplateDTO {
 			Double baseProb, String isChoice, String aiNarrate, Integer effHealth, Integer effHappiness,
 			Integer effKnowledge, Integer effRelation, Double effIncomeRate, Double effWealthRate, String resultAction,
 			String traitId) {
-		super();
 		this.templateId = templateId;
 		this.templateName = templateName;
 		this.minAge = minAge;
