@@ -1,5 +1,7 @@
 package com.example.demo.member;
 
+import java.util.Map;
+
 import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -42,5 +44,16 @@ public class MemberDAO {
 	// 로그인: 아이디로 회원 1명 찾기 (없으면 null)
 	public MemberDTO selectByLoginId(String loginId) {
 		return mybatis.selectOne("member.selectByLoginId", loginId);
+	}
+
+	// 이 회원의 진행 중 인생 개수 (0 또는 1)
+	public int countPlayingLife(int memberId) {
+		return mybatis.selectOne("member.countPlayingLife", memberId);
+	}
+
+	// 비회원 인생에 회원 번호 채우기 → 바뀐 줄 수 (0이면 전환된 인생 없음)
+	public int convertGuestLife(int memberId, String guestToken) {
+		return mybatis.update("member.convertGuestLife",
+				Map.of("memberId", memberId, "guestToken", guestToken));
 	}
 }

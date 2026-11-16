@@ -87,4 +87,19 @@ public class MemberService {
 
 		return member; // 성공
 	}
+
+	// ===== 비회원 인생 → 회원 인생 전환 (M02) =====
+	// 전환했으면 true, 안 했으면 false
+	public boolean convertGuestLife(int memberId, String guestToken) {
+
+		// 1. 비회원으로 하던 인생이 없으면 할 일 없음
+		if (guestToken == null || guestToken.isBlank()) return false;
+
+		// 2. 회원에게 이미 진행 중인 인생이 있으면 전환하지 않음
+		//    (회원당 진행 중 인생 1개 규칙, 남은 비회원 인생은 7일 뒤 자동 삭제)
+		if (dao.countPlayingLife(memberId) > 0) return false;
+
+		// 3. 비회원 인생에 회원 번호 채우기
+		return dao.convertGuestLife(memberId, guestToken) > 0;
+	}
 }
