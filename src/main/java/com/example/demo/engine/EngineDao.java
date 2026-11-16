@@ -8,10 +8,10 @@ import org.apache.ibatis.annotations.Mapper;
 public interface EngineDao {
 	String selectNow();
 
-	List<CountryStatVO> selectBirthCountries(int decade);
-	String selectRandomName(LifeVO life);
-	String selectHistName(LifeVO life);
+	List<CountryStatDTO> selectBirthCountries(int decade);
+	String selectRandomName(LifeDTO life);
+	String selectHistName(LifeDTO life);
 	int selectNextLifeId();
 	int abandonGuestLife(String guestToken);
-	int insertLife(LifeVO life);
+	int insertLife(LifeDTO life);
 }

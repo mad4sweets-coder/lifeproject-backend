@@ -20,7 +20,7 @@ public class EngineService {
 	private Random random = new Random();
 
 	// C02 랜덤 출생
-	public LifeVO birth(int decade, String oldGuestToken) {
+	public LifeDTO birth(int decade, String oldGuestToken) {
 
 		// 0. 진행 중이던 비회원 인생이 있으면 포기 처리
 		if (oldGuestToken != null && !oldGuestToken.equals("")) {
@@ -33,20 +33,20 @@ public class EngineService {
 		int birthYear = minYear + random.nextInt(maxYear - minYear + 1);
 
 		// ② 나라: 출생아 수가 많을수록 확률 높게
-		List<CountryStatVO> list = engineDao.selectBirthCountries(decade);
+		List<CountryStatDTO> list = engineDao.selectBirthCountries(decade);
 		if (list.isEmpty()) {
 			return null; // 그 연대 통계 데이터가 없음
 		}
 
 		long total = 0;
-		for (CountryStatVO c : list) {
+		for (CountryStatDTO c : list) {
 			total += c.getBirths();
 		}
 
 		long pick = (long) (random.nextDouble() * total);
 		long sum = 0;
-		CountryStatVO country = list.get(list.size() - 1);
-		for (CountryStatVO c : list) {
+		CountryStatDTO country = list.get(list.size() - 1);
+		for (CountryStatDTO c : list) {
 			sum += c.getBirths();
 			if (pick < sum) {
 				country = c;
@@ -72,7 +72,7 @@ public class EngineService {
 		// ⑤ 능력치 시작값: 가정형편 1~5 → 건강·지식 -10 / -5 / 0 / +5 / +10
 		int bonus = (wealthClass - 3) * 5;
 
-		LifeVO life = new LifeVO();
+		LifeDTO life = new LifeDTO();
 		life.setBirthYear(birthYear);
 		life.setBirthCountry(country.getCountryCode());
 		life.setCurrentCountry(country.getCountryCode());

@@ -1,6 +1,6 @@
 package com.example.demo.engine;
 
-public class LifeVO {
+public class LifeDTO {
 	private int lifeId;	// 인생 번호
 	private Integer memberId;	// 회원 번호 (비회원 null)
 	private String guestToken;	// 비회원 임시 토큰

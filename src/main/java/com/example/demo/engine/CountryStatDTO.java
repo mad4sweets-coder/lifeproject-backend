@@ -1,6 +1,6 @@
 package com.example.demo.engine;
 
-public class CountryStatVO {
+public class CountryStatDTO {
 	private String countryCode;	// 나라 코드
 	private String nameKo;	// 한글 이름
 	private Long births;	// 출생아 수

@@ -24,7 +24,7 @@ public class EngineController {
 
 	// C02 랜덤 출생 (브라우저 테스트용 GET → React 붙일 때 PostMapping으로 변경)
 	@GetMapping("/api/engine/birth")
-	public LifeVO birth(@RequestParam int decade,
+	public LifeDTO birth(@RequestParam int decade,
 			@RequestParam(required = false) String guestToken) {
 		return engineService.birth(decade, guestToken);
 	}

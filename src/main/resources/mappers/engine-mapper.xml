@@ -10,7 +10,7 @@
 
 	<!-- C02: 그 연대에 태어날 수 있는 나라 + 통계 -->
 	<select id="selectBirthCountries" parameterType="int"
-		resultType="com.example.demo.engine.CountryStatVO">
+		resultType="com.example.demo.engine.CountryStatDTO">
 		SELECT c.COUNTRY_CODE     AS countryCode,
 		       c.NAME_KO          AS nameKo,
 		       s.BIRTHS           AS births,
@@ -27,7 +27,7 @@
 	</select>
 
 	<!-- C02: 나라·성별 이름 랜덤 1개 -->
-	<select id="selectRandomName" parameterType="com.example.demo.engine.LifeVO"
+	<select id="selectRandomName" parameterType="com.example.demo.engine.LifeDTO"
 		resultType="string">
 		SELECT PERSON_NAME FROM (
 			SELECT PERSON_NAME
@@ -40,7 +40,7 @@
 	</select>
 
 	<!-- C02: 당시 국가명 -->
-	<select id="selectHistName" parameterType="com.example.demo.engine.LifeVO"
+	<select id="selectHistName" parameterType="com.example.demo.engine.LifeDTO"
 		resultType="string">
 		SELECT HIST_NAME
 		FROM COUNTRY_NAME_HIST
@@ -64,7 +64,7 @@
 	</update>
 
 	<!-- C02: 인생 저장 (나머지 컬럼은 DEFAULT 값) -->
-	<insert id="insertLife" parameterType="com.example.demo.engine.LifeVO">
+	<insert id="insertLife" parameterType="com.example.demo.engine.LifeDTO">
 		INSERT INTO LIFE (
 			LIFE_ID, MEMBER_ID, GUEST_TOKEN, START_TYPE,
 			NAME, GENDER, BIRTH_COUNTRY, CURRENT_COUNTRY, BIRTH_YEAR,
