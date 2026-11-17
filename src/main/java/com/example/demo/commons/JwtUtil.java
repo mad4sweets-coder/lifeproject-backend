@@ -29,10 +29,10 @@ public class JwtUtil {
 		this.jwt = JWT.require(algo).build();
 	}
 
-	public String createToken(String id) {
+	public String createToken(String id,String role) {
 		return JWT.create()
 				.withSubject(id)
-				.withClaim("role", "guest")
+				.withClaim("role", role)
 				.withIssuedAt(new Date())
 				.withExpiresAt(new Date(System.currentTimeMillis() + expiration))
 				.sign(this.algo);

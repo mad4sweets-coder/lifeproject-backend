@@ -5,7 +5,7 @@ public class MemberFindDTO {
 	private String email;            // 인증번호 받을 이메일
 	private String purpose;          // FIND_ID 또는 RESET_PW
 	private String code;             // 사용자가 입력한 인증번호 6자리
-	private String newPassword;      // 새 비밀번호 (reset-pw 에서만)
+	private String newPassword;      // 새 비밀번호 (resetPw 에서만)
 	private String newPasswordCheck; // 새 비밀번호 확인
 	
 	public MemberFindDTO() {}

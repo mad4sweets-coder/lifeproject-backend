@@ -42,20 +42,20 @@ public class MemberController {
 		}
 	}
 
-	// 아이디 중복 확인  GET /api/members/check-id?loginId=abc
-	@GetMapping("/check-id")
+	// 아이디 중복 확인  GET /api/members/checkId?loginId=abc
+	@GetMapping("/checkId")
 	public Map<String, Boolean> checkId(@RequestParam String loginId) {
 		return Map.of("available", service.isLoginIdAvailable(loginId));
 	}
 
-	// 닉네임 중복 확인  GET /api/members/check-nickname?nickname=홍길동
-	@GetMapping("/check-nickname")
+	// 닉네임 중복 확인  GET /api/members/checkNickname?nickname=홍길동
+	@GetMapping("/checkNickname")
 	public Map<String, Boolean> checkNickname(@RequestParam String nickname) {
 		return Map.of("available", service.isNicknameAvailable(nickname));
 	}
 
-	// 이메일 중복 확인  GET /api/members/check-email?email=a@b.com
-	@GetMapping("/check-email")
+	// 이메일 중복 확인  GET /api/members/checkEmail?email=a@b.com
+	@GetMapping("/checkEmail")
 	public Map<String, Boolean> checkEmail(@RequestParam String email) {
 		return Map.of("available", service.isEmailAvailable(email));
 	}
@@ -75,7 +75,7 @@ public class MemberController {
 		boolean converted = service.convertGuestLife(member.getMemberId(), dto.getGuestToken());
 
 		// 토큰 안에는 회원 번호만 넣음 (비밀번호·이메일은 넣지 않음)
-		String token = jwtUtil.createToken(String.valueOf(member.getMemberId()));
+		String token = jwtUtil.createToken(String.valueOf(member.getMemberId()),member.getMemberRole());
 
 		return ResponseEntity.ok(Map.of(
 				"token", token,
@@ -112,6 +112,18 @@ public class MemberController {
 			// 거의 동시에 같은 닉네임·이메일로 바꾼 경우 → DB UNIQUE 제약이 막아 줌
 			return ResponseEntity.status(409).body(Map.of("message", "이미 사용 중인 닉네임 또는 이메일입니다."));
 		}
+	}
+
+	// 이메일 변경 인증번호 보내기 (M05)  POST /api/members/me/emailCode
+	// 보내는 JSON: { email }  ← 바꿀 새 이메일
+	@PostMapping("/me/emailCode")
+	public ResponseEntity<?> emailCode(@RequestAttribute("memberId") String memberId,
+			@RequestBody MemberUpdateDTO dto) {
+		String error = service.sendEmailChangeCode(Integer.parseInt(memberId), dto.getEmail());
+		if (error != null) {
+			return ResponseEntity.badRequest().body(Map.of("message", error));
+		}
+		return ResponseEntity.ok(Map.of("message", "새 이메일로 인증번호를 보냈어요. 5분 안에 입력해 주세요."));
 	}
 
 	// 회원 탈퇴 (M06)  POST /api/members/me/withdraw
