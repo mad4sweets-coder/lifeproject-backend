@@ -73,6 +73,7 @@
 		SELECT m.LOGIN_ID,
 		       m.NICKNAME,
 		       m.EMAIL,
+		       m.PHONE,
 		       TO_CHAR(m.JOIN_DATE, 'YYYY-MM-DD') AS JOIN_DATE,
 		       m.POINT,
 		       (SELECT COUNT(*) FROM LIFE x
@@ -115,7 +116,8 @@
 	<update id="updateMember" parameterType="com.example.demo.member.MemberUpdateDTO">
 		UPDATE MEMBER
 		SET NICKNAME = #{nickname},
-		    EMAIL = #{email}
+		    EMAIL = #{email},
+		    PHONE = #{phone}
 		    <if test="newPassword != null">
 		    , PASSWORD = #{newPassword}
 		    </if>

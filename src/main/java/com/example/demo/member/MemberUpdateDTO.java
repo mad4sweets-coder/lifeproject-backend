@@ -7,6 +7,7 @@ public class MemberUpdateDTO {
 	private int memberId;            // 회원 번호 (화면에서 안 보냄, 서버가 토큰에서 꺼내 넣음)
 	private String nickname;         // 바꿀 닉네임
 	private String email;            // 바꿀 이메일
+	private String phone;            // 바꿀 전화번호 (010-1234-5678 도 OK, 서버에서 숫자만 남김)
 	private String currentPassword;  // 현재 비밀번호 (본인 확인용)
 	private String newPassword;      // 새 비밀번호 (비워 두면 안 바뀜)
 	private String newPasswordCheck; // 새 비밀번호 확인
@@ -20,6 +21,9 @@ public class MemberUpdateDTO {
 
 	public String getEmail() { return email; }
 	public void setEmail(String email) { this.email = email; }
+
+	public String getPhone() { return phone; }
+	public void setPhone(String phone) { this.phone = phone; }
 
 	public String getCurrentPassword() { return currentPassword; }
 	public void setCurrentPassword(String currentPassword) { this.currentPassword = currentPassword; }

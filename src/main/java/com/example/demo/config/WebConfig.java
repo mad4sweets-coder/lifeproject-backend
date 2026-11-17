@@ -4,6 +4,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
+import com.example.demo.interceptors.ActiveMemberValidator;
 import com.example.demo.interceptors.LoginValidator;
 
 // LoginValidator(문지기)를 어느 주소에 세울지 정하는 곳
@@ -12,9 +13,11 @@ import com.example.demo.interceptors.LoginValidator;
 public class WebConfig implements WebMvcConfigurer {
 
 	private LoginValidator loginValidator;
+	private ActiveMemberValidator activeMemberValidator;
 
-	public WebConfig(LoginValidator loginValidator) {
+	public WebConfig(LoginValidator loginValidator, ActiveMemberValidator activeMemberValidator) {
 		this.loginValidator = loginValidator;
+		this.activeMemberValidator = activeMemberValidator;
 	}
 
 	@Override
@@ -28,5 +31,10 @@ public class WebConfig implements WebMvcConfigurer {
 						"/api/members/login",    // 로그인
 						"/api/members/check*",
 						"/api/members/find/**"); // 아이디·닉네임·이메일 중복 확인
+
+		// 탈퇴한 회원의 토큰 막기 (모든 /api 주소, 게임 API 포함)
+		// 토큰이 없으면(비회원) 그냥 통과 → 비회원 게임은 그대로 됨
+		registry.addInterceptor(activeMemberValidator)
+				.addPathPatterns("/api/**");
 	}
 }

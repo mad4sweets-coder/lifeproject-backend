@@ -152,6 +152,12 @@ public class MemberService {
 		if (dto.getEmail() == null || !dto.getEmail().matches("^[\\w.+-]+@[\\w-]+\\.[\\w.]+$")) {
 			return "이메일 형식이 올바르지 않습니다.";
 		}
+		// 전화번호 (회원가입과 같은 규칙, 숫자만 남겨서 저장)
+		String phone = dto.getPhone() == null ? "" : dto.getPhone().replaceAll("[^0-9]", "");
+		if (!phone.matches("^01[0-9]{8,9}$")) {
+			return "전화번호를 올바르게 입력해 주세요. (예: 010-1234-5678)";
+		}
+		dto.setPhone(phone);
 
 		// 4. 중복 검사 (나 자신은 빼고 셈 → 닉네임 그대로 두면 통과)
 		if (dao.countNicknameExceptMe(memberId, dto.getNickname()) > 0) return "이미 사용 중인 닉네임입니다.";
