@@ -19,9 +19,11 @@ import com.example.demo.event.dto.GameEventDTO;
 public class EventController {
 
 	private final EventService eServ;
+	private final EventDAO eDAO;
 
-	public EventController(EventService eServ) {
+	public EventController(EventService eServ, EventDAO eDAO) {
 		this.eServ = eServ;
+		this.eDAO = eDAO;
 	}
 
 	@GetMapping("/templates")
@@ -46,21 +48,46 @@ public class EventController {
 		}
 		return ResponseEntity.ok(result);
 	}
-	
+
 	// 테스트: 엔진 연결용 rollYear 확인 (최종 전에 삭제)
-		@GetMapping("/test/year")
-		public List<EventResultDTO> testYear(@RequestParam int age, @RequestParam int birthYear,
-				@RequestParam String country, @RequestParam String gender,
-				@RequestParam int wealth, @RequestParam String name,
-				@RequestParam(defaultValue = "0") int lifeId) {
-			LifeDTO life = new LifeDTO();
-			life.setLifeId(lifeId);
-			life.setCurrentAge(age);
-			life.setBirthYear(birthYear);
-			life.setCurrentCountry(country);
-			life.setGender(gender);
-			life.setWealthClass(wealth);
-			life.setName(name);
-			return eServ.rollYear(life);
-		}
+	@GetMapping("/test/year")
+	public List<EventResultDTO> testYear(@RequestParam int age, @RequestParam int birthYear,
+			@RequestParam String country, @RequestParam String gender, @RequestParam int wealth,
+			@RequestParam String name, @RequestParam(defaultValue = "0") int lifeId) {
+		LifeDTO life = new LifeDTO();
+		life.setLifeId(lifeId);
+		life.setCurrentAge(age);
+		life.setBirthYear(birthYear);
+		life.setCurrentCountry(country);
+		life.setGender(gender);
+		life.setWealthClass(wealth);
+		life.setName(name);
+		return eServ.rollYear(life);
+	}
+
+	// 테스트: 선택지 고르기 (최종 전에 삭제)
+	@GetMapping("/test/choice")
+	public EventResultDTO testChoice(@RequestParam int choiceId, @RequestParam int age, @RequestParam int birthYear,
+			@RequestParam String country, @RequestParam String name) {
+		LifeDTO life = new LifeDTO();
+		life.setCurrentAge(age);
+		life.setBirthYear(birthYear);
+		life.setCurrentCountry(country);
+		life.setName(name);
+		return eServ.applyChoice(life, choiceId, age);
+	}
+
+	// 테스트: 역사 이벤트 후보 (최종 전에 삭제)
+	@GetMapping("/test/hist")
+	public List<GameEventDTO> testHist(@RequestParam String country, @RequestParam int year, @RequestParam int age,
+			@RequestParam String gender) {
+		return eDAO.selectHistCandidates(country, year, age, gender);
+	}
+
+	// 테스트: 역사 이벤트 굴리기 (최종 전에 삭제)
+	@GetMapping("/test/histroll")
+	public List<EventResultDTO> testHistRoll(@RequestParam String country, @RequestParam int year,
+			@RequestParam int age, @RequestParam String gender, @RequestParam String name) {
+		return eServ.rollHist(country, year, age, gender, name, new ArrayList<>());
+	}
 }

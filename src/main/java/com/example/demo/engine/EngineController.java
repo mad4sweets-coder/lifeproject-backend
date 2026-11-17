@@ -89,6 +89,9 @@ public class EngineController {
 		if (!engineService.isMyLife(lifeId, loginMemberId(auth), guestToken)) {
 			return ResponseEntity.status(403).body("내 인생이 아니에요.");
 		}
+		if (engineService.isWaitingChoice(lifeId)) {
+			return ResponseEntity.status(409).body("선택 이벤트를 먼저 골라 주세요.");
+		}
 		LifeDTO life = engineService.nextYear(lifeId);
 		if (life == null) {
 			return ResponseEntity.badRequest()
@@ -129,6 +132,23 @@ public class EngineController {
 		if (life == null) {
 			return ResponseEntity.badRequest()
 					.body("지금은 직업을 고를 수 없거나, 학력이 부족한 직업이에요.");
+		}
+		return ResponseEntity.ok(life);
+	}
+
+	// C09 선택 이벤트 고르기  POST /api/engine/choice  { lifeId, choiceId, guestToken }
+	@PostMapping("/api/engine/choice")
+	public ResponseEntity<?> chooseEvent(@RequestBody EngineRequestDTO req,
+			@RequestHeader(value = "Authorization", required = false) String auth) {
+		int lifeId = req.getLifeId();
+		String guestToken = req.getGuestToken();
+		if (!engineService.isMyLife(lifeId, loginMemberId(auth), guestToken)) {
+			return ResponseEntity.status(403).body("내 인생이 아니에요.");
+		}
+		LifeDTO life = engineService.chooseEvent(lifeId, req.getChoiceId());
+		if (life == null) {
+			return ResponseEntity.badRequest()
+					.body("지금 고를 선택 이벤트가 없거나, 이 이벤트의 선택지가 아니에요.");
 		}
 		return ResponseEntity.ok(life);
 	}

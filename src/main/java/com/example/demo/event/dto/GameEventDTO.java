@@ -24,7 +24,7 @@ public class GameEventDTO {
 	private String isChoice;
 	private String aiNarrate;
 	private Double effWealthRate;
-
+	
 	public GameEventDTO() {}
 	
 	public GameEventDTO(String eventId, String eventType, String templateId, String varValue, Double effectScale,
