@@ -1,6 +1,7 @@
 package com.example.demo.event;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -11,6 +12,7 @@ import com.example.demo.event.dto.EventChoiceDTO;
 import com.example.demo.event.dto.EventResultDTO;
 import com.example.demo.event.dto.EventTemplateDTO;
 import com.example.demo.event.dto.GameEventDTO;
+import com.example.demo.event.dto.HistEventTypeDTO;
 
 @Service
 public class EventService {
@@ -204,8 +206,20 @@ public class EventService {
 		int year = life.getBirthYear() + age;
 		List<String> expIds = eDAO.selectExpIds(life.getLifeId());
 		List<EventResultDTO> results = new ArrayList<>();
-		boolean hasChoice = false; // 한 해에 선택 이벤트는 1개만
+		boolean hasChoice = false; // 한 해에 선택 이벤트는 1개만 (역사 + 인생 합쳐서)
 
+		// 1. 역사 이벤트 (C10): 먼저 굴림
+		for (EventResultDTO h : rollHist(life.getCurrentCountry(), year, age, life.getGender(), life.getName(),
+				expIds)) {
+			if (h.isChoice()) {
+				if (hasChoice)
+					continue;
+				hasChoice = true;
+			}
+			results.add(h);
+		}
+
+		// 2. 인생 이벤트 (C09)
 		for (EventTemplateDTO t : rollTemplates(age, year, life.getCurrentCountry())) {
 			GameEventDTO e = pickEvent(t, age, life.getGender(), life.getWealthClass(), expIds);
 			if (e == null)
@@ -233,7 +247,7 @@ public class EventService {
 		EventResultDTO r = new EventResultDTO();
 		r.setEventId(c.getEventId());
 		r.setExpId(c.getEventId() + "_" + c.getChoiceOrder()); // 예: LE_MIGRATE_WORK_1
-		r.setEventType("LIFE");
+		r.setEventType(c.getEventId().startsWith("LE_") ? "LIFE" : "HIST"); // 인생 이벤트 ID는 LE_로 시작
 		r.setTitle(c.getChoiceText());
 
 		// 1. 결과 문구 변수 치환
@@ -267,6 +281,84 @@ public class EventService {
 		r.setEffWealthRate(wealth);
 		r.setMigrateTo(c.getMigrateTo());
 		r.setLogText(text);
+
+		return r;
+	}
+
+	// ===== 역사 이벤트 (C10) =====
+
+	// 유형 5종 효과 (한 번만 DB 조회, 유형 코드로 찾기)
+	private Map<String, HistEventTypeDTO> histTypeCache;
+
+	private HistEventTypeDTO getHistType(String typeCode) {
+		if (histTypeCache == null) {
+			histTypeCache = new HashMap<>();
+			for (HistEventTypeDTO h : eDAO.selectHistTypes()) {
+				histTypeCache.put(h.getTypeCode(), h);
+			}
+		}
+		return histTypeCache.get(typeCode);
+	}
+
+	// 올해 겪는 역사 이벤트 목록
+	public List<EventResultDTO> rollHist(String countryCode, int year, int age, String gender, String name,
+			List<String> expIds) {
+		List<EventResultDTO> results = new ArrayList<>();
+		for (GameEventDTO e : eDAO.selectHistCandidates(countryCode, year, age, gender)) {
+			if (!passExp(e, expIds))
+				continue; // 이미 겪은 사건 (IS_ONCE)
+			double prob = e.getProbability() == null ? 0 : e.getProbability();
+			if (Math.random() < prob) {
+				results.add(buildHistResult(e, name, age, year, countryCode));
+			}
+		}
+		return results;
+	}
+
+	// 역사 이벤트 결과: 효과 = 유형 효과 × 강도 / 재산은 이벤트 값 우선 (A 규칙)
+	private EventResultDTO buildHistResult(GameEventDTO e, String name, int age, int year, String countryCode) {
+		EventResultDTO r = new EventResultDTO();
+		r.setEventId(e.getEventId());
+		r.setExpId(e.getEventId());
+		r.setEventType("HIST");
+		r.setTitle(e.getTitle());
+		r.setAiNarrate("Y".equals(e.getAiNarrate()));
+		r.setChoice("Y".equals(e.getIsChoice()));
+		if (r.isChoice()) {
+			r.setChoices(eDAO.selectChoices(e.getEventId()));
+		}
+
+		// 1. 문장: 검수된 게임 문구, 없으면 제목
+		String countryName = eDAO.selectCountryName(countryCode);
+		String text = e.getBaseText() == null ? e.getTitle() : e.getBaseText();
+		text = text.replace("{이름}", name).replace("{나이}", String.valueOf(age)).replace("{연도}", String.valueOf(year))
+				.replace("{나라}", countryName == null ? countryCode : countryName);
+		r.setLogText(text);
+
+		// 선택 이벤트는 효과 없이 대기 → 고른 선택지 효과만 반영
+		if (r.isChoice()) {
+			return r;
+		}
+
+		// 2. 효과: 유형 효과 × 강도 (예: 전쟁 행복 -10 × 강도 3 = -30)
+		HistEventTypeDTO h = getHistType(e.getHistTypeCode());
+		int k = e.getIntensity() == null ? 1 : e.getIntensity();
+		if (h != null) {
+			r.setEffHealth((int) Math.round(nz(h.getEffHealth()) * k));
+			r.setEffHappiness((int) Math.round(nz(h.getEffHappiness()) * k));
+			r.setEffKnowledge((int) Math.round(nz(h.getEffKnowledge()) * k));
+			r.setEffRelation((int) Math.round(nz(h.getEffRelation()) * k));
+			r.setDeathAdd(nz(h.getDeathAdd()) * k); // 그해 사망 확률 가산 (엔진 C07), 작은 값이라 반올림 안 함
+			r.setDeathCause(h.getDeathCause());
+		}
+
+		// 3. 재산: 이벤트 값이 있으면 그 값 그대로, 없으면 유형 값 × 강도
+		if (e.getEffWealthRate() != null) {
+			r.setEffWealthRate(round3(e.getEffWealthRate()));
+		} else if (h != null) {
+			r.setEffWealthRate(round3(nz(h.getEffWealthRate()) * k));
+		}
+		r.setEffIncomeRate(0);
 
 		return r;
 	}

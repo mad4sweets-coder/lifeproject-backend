@@ -10,6 +10,7 @@ import org.springframework.stereotype.Repository;
 import com.example.demo.event.dto.EventChoiceDTO;
 import com.example.demo.event.dto.EventTemplateDTO;
 import com.example.demo.event.dto.GameEventDTO;
+import com.example.demo.event.dto.HistEventTypeDTO;
 
 @Repository
 public class EventDAO {
@@ -61,4 +62,20 @@ public class EventDAO {
 	public EventChoiceDTO selectChoice(int choiceId) {
 		return mybatis.selectOne("Event.selectChoice", choiceId);
 	}
+
+	// 역사 이벤트 후보 (나라·연도·나이·성별)
+	public List<GameEventDTO> selectHistCandidates(String countryCode, int year, int age, String gender) {
+		Map<String, Object> param = new HashMap<>();
+		param.put("countryCode", countryCode);
+		param.put("year", year);
+		param.put("age", age);
+		param.put("gender", gender);
+		return mybatis.selectList("Event.selectHistCandidates", param);
+	}
+
+	// 역사 사건 유형 5종
+	public List<HistEventTypeDTO> selectHistTypes() {
+		return mybatis.selectList("Event.selectHistTypes");
+	}
+
 }
