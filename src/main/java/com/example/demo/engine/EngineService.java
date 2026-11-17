@@ -212,7 +212,9 @@ public class EngineService {
 	// 타고난 학업 재능 (원작 tal("st")): 인생마다 정해진 값, 평균 0·표준편차 1
 	private double talent(LifeDTO life) {
 		// SplittableRandom: 번호가 이웃한 인생끼리도 재능이 고르게 퍼지게 (java.util.Random은 비슷한 씨앗끼리 첫 값이 닮음)
-		return new java.util.SplittableRandom(life.getLifeId() * 1000003L + 17).nextGaussian();
+		// C13 학업 능력 레벨은 원작의 '타고난 학업 재능'을 올려 주는 방식 (레벨당 +0.25 표준편차)
+		//   → 원작 공식 그대로 지식(또래 위치)이 오르고, 지식을 통해 진학·중퇴·대학원 합격이 좋아짐
+		return new java.util.SplittableRandom(life.getLifeId() * 1000003L + 17).nextGaussian() + studyEffect(life);
 	}
 
 	// 나이별 재능 반영 비중 (원작 talW)
@@ -460,27 +462,6 @@ public class EngineService {
 		life.setRegionCode(s == null ? null : s.getRegionCode());
 	}
 
-	// ================= C03 비회원 → 회원 전환 =================
-	// 비회원으로 진행하다 회원가입·로그인하면 그 인생에 회원 번호를 채움
-	// 이미 진행 중인 회원 인생이 있으면 전환하지 않음 (회원 1명당 진행 중 인생 1개)
-	// 반환: 전환 후 진행 중인 회원 인생 (전환할 게 없으면 null)
-	public LifeDTO claimGuestLife(Integer memberId, String guestToken) {
-		if (memberId == null || guestToken == null || guestToken.equals("")) {
-			return null;
-		}
-		LifeDTO mine = new LifeDTO();
-		mine.setMemberId(memberId);
-		if (engineDao.selectPlayingLife(mine) != null) {
-			return null; // 이미 진행 중인 회원 인생이 있음
-		}
-		LifeDTO cond = new LifeDTO();
-		cond.setMemberId(memberId);
-		cond.setGuestToken(guestToken);
-		if (engineDao.claimGuestLife(cond) == 0) {
-			return null; // 전환할 비회원 인생이 없음
-		}
-		return currentLife(memberId, null);
-	}
 
 	// ================= 본인 확인 =================
 
@@ -880,9 +861,6 @@ public class EngineService {
 			if (age > 72 && !"BRAIN".equals(focus)) {
 				d -= 0.02; // 두뇌 활동을 안 하면 노년에 감소
 			}
-			if (d > 0) {
-				d = d * (1 + studyEffect(life)); // C13 학업 능력: 지식 증가량 보정
-			}
 			kE = clamp(kE * (age < 25 ? 0.97 : 0.985) + d, -1.4, 1.6);
 		}
 		life.setKnowledge(clamp(100 * normCdf(talW(age) * tal + kE), 0.5, 99.9));
@@ -1051,7 +1029,6 @@ public class EngineService {
 			d = d * ("Y".equals(life.getIsUrban()) ? 1.4 : 0.75);
 		}
 		String g = groupOf(life.getCurrentCountry(), stat);
-		d = d * (1 + studyEffect(life)); // C13 학업 능력: 진학 승산 보정
 		double uniK = d;
 		if ("F".equals(life.getGender())) {
 			uniK = d * (g.equals("sa") || g.equals("mena") || g.equals("ssa") ? 1 : 1.2);
@@ -1084,7 +1061,7 @@ public class EngineService {
 				uni = rs.getEnrollUni();
 			}
 			double admit = clamp(0.1 + uni / 400 + (life.getKnowledge() - 40) / 300 + (life.getWealthClass() - 3) * 0.03, 0.05, 0.45);
-			return clamp(admit * (1 + studyEffect(life)), 0, 0.9) * 0.5; // C13 학업 능력 보정
+			return admit * 0.5;
 		}
 		return eduProbs(life, stat)[next];
 	}
@@ -1497,7 +1474,8 @@ public class EngineService {
 		}
 	}
 
-	// C13 학업 능력 효과값 (예: 0.1 = 지식 증가량·진학 승산 +10%), 효과 표가 비어 있으면 0
+	// C13 학업 능력 효과값 = 타고난 재능에 더하는 값 (표준편차 단위)
+	//   TRAIT_LEVEL_EFFECT에 값이 있으면 그 값, 없으면 (레벨-1)×0.25 (Lv1 0 ~ Lv5 +1.0), 특성 기록이 없으면 0
 	// 한 인생 안에서는 바뀌지 않아서 서버 메모리에 보관 (매년 DB를 읽지 않게)
 	private final Map<Integer, Double> studyCache = new ConcurrentHashMap<>();
 
@@ -1606,23 +1584,14 @@ public class EngineService {
 	}
 
 	// 이벤트 결과의 상태 변경 처리 (RESULT_ACTION)
-	// 결혼 상태는 경험 STATE_MARRIED로도 남김: 윤아님 이벤트 조건에 쓰임
-	//   (출산 LE_BIRTH_1의 필요 경험, 연애 LE_LOVE_*·결혼 생활 변화의 제외/필요 경험)
+	// 결혼 상태(IS_MARRIED)는 윤아님 rollYear가 이벤트 조건용 STATE_MARRIED로 바꿔서 씀 (DB 저장 없음)
 	private void applyAction(LifeDTO life, String action, String migrateTo, int age) {
 		if (action == null) {
 			return;
 		}
 		switch (action) {
 		case "MARRY": // 결혼
-			if (!"Y".equals(life.getMarriedYn())) {
-				life.setMarriedYn("Y");
-				ExperienceDTO married = new ExperienceDTO();
-				married.setLifeId(life.getLifeId());
-				married.setExpId("STATE_MARRIED");
-				married.setAge(age);
-				married.setYearNo(life.getBirthYear() + age);
-				engineDao.insertExperience(married);
-			}
+			life.setMarriedYn("Y");
 			break;
 		case "CHILD": // 자녀 +1
 			life.setChildCount(life.getChildCount() + 1);
@@ -1630,13 +1599,7 @@ public class EngineService {
 		case "MARRIAGE_END": // 이혼·사별 (윤아님 이벤트 값): 결혼 상태 해제 (자녀 수는 그대로)
 		case "DIVORCE":
 		case "SPOUSE_DEATH":
-			if ("Y".equals(life.getMarriedYn())) {
-				life.setMarriedYn("N");
-				ExperienceDTO married = new ExperienceDTO();
-				married.setLifeId(life.getLifeId());
-				married.setExpId("STATE_MARRIED");
-				engineDao.deleteExperience(married); // 다시 연애·재혼할 수 있게, 출산은 멈춤
-			}
+			life.setMarriedYn("N"); // 다시 연애·재혼할 수 있게, 첫째 출산은 멈춤 (STATE_MARRIED가 빠짐)
 			break;
 		case "PARENT_DEATH": // 부모 사망
 			life.setParentAlive("N");
