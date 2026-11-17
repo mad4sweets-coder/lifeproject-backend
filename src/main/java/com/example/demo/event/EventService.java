@@ -7,7 +7,9 @@ import java.util.Map;
 
 import org.springframework.stereotype.Service;
 
+import com.example.demo.engine.EngineService;
 import com.example.demo.engine.LifeDTO;
+import com.example.demo.event.dto.DestinationDTO;
 import com.example.demo.event.dto.EventChoiceDTO;
 import com.example.demo.event.dto.EventResultDTO;
 import com.example.demo.event.dto.EventTemplateDTO;
@@ -41,7 +43,7 @@ public class EventService {
 	// ===== 2단계: 템플릿별 확률 계산 + 굴리기 =====
 
 	// 올해 걸린 템플릿 목록
-	public List<EventTemplateDTO> rollTemplates(int age, int year, String countryCode) {
+	public List<EventTemplateDTO> rollTemplates(int age, int year, String countryCode, String gender) {
 		Map<String, Object> stat = eDAO.selectCountryStat(countryCode, year / 10 * 10);
 		List<EventTemplateDTO> hits = new ArrayList<>();
 
@@ -49,7 +51,7 @@ public class EventService {
 			if (age < t.getMinAge() || age > t.getMaxAge())
 				continue; // 나이 조건
 
-			double prob = calcProbability(t, age, stat);
+			double prob = calcProbability(t, age, stat, countryCode, gender);
 			if (Math.random() < prob) {
 				hits.add(t);
 			}
@@ -60,7 +62,7 @@ public class EventService {
 	private static final int AVG_MARRY_AGE = 25; // 평균 결혼 나이 (설계값, 추후 시뮬레이션 결과로 조정)
 
 	// 템플릿 하나의 올해 발생 확률
-	public double calcProbability(EventTemplateDTO t, int age, Map<String, Object> stat) {
+	public double calcProbability(EventTemplateDTO t, int age, Map<String, Object> stat, String countryCode, String gender) {
 		double base = t.getBaseProb() == null ? 0 : t.getBaseProb();
 
 		switch (t.getProbMethod()) {
@@ -68,9 +70,9 @@ public class EventService {
 			Double tfr = getStat(stat, "TFR");
 			int years = t.getMaxAge() - AVG_MARRY_AGE + 1;
 			return tfr == null ? base : tfr / years;
-		case "UNEMPLOYMENT": // 실직: 실업률 ÷ 100
+		case "UNEMPLOYMENT": // 실직: 실업률 ÷ 100 × 0.4 (실업률은 '지금 일자리 없는 비율'이라 1년 실직 확률보다 높음)
 			Double unemp = getStat(stat, "UNEMPLOYMENT_RATE");
-			return unemp == null ? base : unemp / 100;
+			return unemp == null ? base : unemp / 100 * 0.4;
 		case "NET_MIGRATION": // 이민: 기본 확률 × (1 - 순이민률‰), 배율 0.5~3.0배 제한 (유출 많을수록 ↑)
 			Double mig = getStat(stat, "NET_MIGRATION_RATE");
 			if (mig == null)
@@ -82,11 +84,10 @@ public class EventService {
 			// 나라 건강 배율 = 75(기준 기대수명) ÷ 기대수명, 0.8~2.0배 제한 / 통계 없으면 1.0
 			double countryRate = (le == null) ? 1.0 : Math.min(Math.max(75 / le, 0.8), 2.0);
 			return base * diseaseAgeRate(age) * countryRate;
-		case "SPOUSE_DEATH": // 사별: 배우자(동갑 가정) 사망 확률 = 엔진 사망 판정(C07)의 5세 이상 기본 곡선과 같은 공식
-			Double spouseLe = getStat(stat, "LIFE_EXPECTANCY");
-			double lifeExp = (spouseLe == null) ? 70 : spouseLe; // 통계 없으면 기대수명 70 (엔진 기본값과 같음)
-			double shift = (75 - lifeExp) * 0.75; // 기대수명이 낮을수록 곡선이 앞당겨짐 (엔진과 같음)
-			return Math.min(0.000065 * Math.exp(0.09 * (age + shift)), 0.5); // 최대 50%
+		case "SPOUSE_DEATH": // 사별: 배우자(반대 성별, 같은 나이)의 올해 사망 확률 = 엔진 원작 생명표 (C07)
+			String spouseGender = "M".equals(gender) ? "F" : "M";
+			return EngineService.baseDeathProb(countryCode, getStat(stat, "LIFE_EXPECTANCY"),
+					getStat(stat, "INFANT_MORTALITY"), getStat(stat, "U5_MORTALITY"), spouseGender, age);
 		default: // FIXED
 			return base;
 		}
@@ -230,7 +231,7 @@ public class EventService {
 		}
 
 		// 2. 인생 이벤트 (C09)
-		for (EventTemplateDTO t : rollTemplates(age, year, life.getCurrentCountry())) {
+		for (EventTemplateDTO t : rollTemplates(age, year, life.getCurrentCountry(), life.getGender())) {
 			GameEventDTO e = pickEvent(t, age, life.getGender(), life.getWealthClass(), expIds);
 			if (e == null)
 				continue; // 조건 맞는 이벤트 없음
@@ -287,11 +288,89 @@ public class EventService {
 			r.setResultAction(null); // 투자는 엔진에서 따로 처리할 상태 변화 없음
 		} else {
 			r.setResultAction(c.getResultAction()); // MARRY, MIGRATE 등
+
+			// 떠난다(MIGRATE)인데 목적지가 정해지지 않았으면 → 목적지 후보 5곳
+			if ("MIGRATE".equals(c.getResultAction()) && c.getMigrateTo() == null) {
+				r.setNeedDestination(true);
+				r.setDestinations(pickDestinations(life.getCurrentCountry(), year));
+			}
 		}
 		r.setEffWealthRate(wealth);
 		r.setMigrateTo(c.getMigrateTo());
 		r.setLogText(text);
 
+		return r;
+	}
+
+	// ===== 이민 목적지 (C10) =====
+
+	private static final String[] TIER_NAMES = { "상위", "중상위", "중위", "중하위", "하위" };
+
+	// 목적지 후보: GDP 순 정렬 → 5구역 → 구역마다 1곳 랜덤 (후보 5곳 이하면 전부)
+	public List<DestinationDTO> pickDestinations(String currentCountry, int year) {
+		List<DestinationDTO> all = eDAO.selectMigrateCandidates(currentCountry, year / 10 * 10);
+		List<DestinationDTO> picks = new ArrayList<>();
+		int n = all.size();
+
+		if (n <= 5) {
+			// 후보가 5곳 이하: 전부 보여주고 순서대로 구역 매기기
+			for (int i = 0; i < n; i++) {
+				DestinationDTO d = all.get(i);
+				int g = i * 5 / n; // 0(상위) ~ 4(하위)
+				d.setTier(g + 1);
+				d.setTierName(TIER_NAMES[g]);
+				picks.add(d);
+			}
+			return picks;
+		}
+
+		// 후보가 6곳 이상: 5구역으로 나눠 구역마다 1곳 랜덤
+		for (int g = 0; g < 5; g++) {
+			int start = g * n / 5;
+			int end = (g + 1) * n / 5;
+			DestinationDTO d = all.get(start + (int) (Math.random() * (end - start)));
+			d.setTier(g + 1);
+			d.setTierName(TIER_NAMES[g]);
+			picks.add(d);
+		}
+		return picks;
+	}
+
+	// 구역별 효과: 소득 배율(이민자 불이익) / 행복(생활 안정)
+	private static final double[] TIER_INCOME = { -0.30, -0.20, -0.10, -0.05, 0 };
+	private static final int[] TIER_HAPPY = { 2, 1, 0, -1, -2 };
+
+	// 목적지를 고르면 결과: 구역 효과 + 나라 이동
+	// eventId: 떠난다를 고른 이벤트 (기록용), age: 이벤트가 일어난 나이
+	public EventResultDTO applyDestination(LifeDTO life, String countryCode, int age, String eventId) {
+		int year = life.getBirthYear() + age;
+		List<DestinationDTO> all = eDAO.selectMigrateCandidates(life.getCurrentCountry(), year / 10 * 10);
+
+		// 1. 고른 나라가 후보에 있는지 + 몇 번째인지 (GDP 순위)
+		int idx = -1;
+		for (int i = 0; i < all.size(); i++) {
+			if (all.get(i).getCountryCode().equals(countryCode)) {
+				idx = i;
+				break;
+			}
+		}
+		if (idx == -1)
+			return null; // 없는 나라이거나 지금 사는 나라
+
+		DestinationDTO d = all.get(idx);
+		int g = idx * 5 / all.size(); // 구역 0(상위) ~ 4(하위)
+
+		// 2. 결과
+		EventResultDTO r = new EventResultDTO();
+		r.setEventId(eventId);
+		r.setExpId("MIGRATE_" + countryCode); // 예: MIGRATE_JPN (어느 나라로 갔는지 경험)
+		r.setEventType(eventId.startsWith("LE_") ? "LIFE" : "HIST");
+		r.setTitle(d.getNameKo() + " 이주");
+		r.setLogText(year + "년, " + life.getName() + "은(는) " + d.getNameKo() + "(으)로 떠났다.");
+		r.setEffIncomeRate(TIER_INCOME[g]);
+		r.setEffHappiness(TIER_HAPPY[g]);
+		r.setResultAction("MIGRATE");
+		r.setMigrateTo(countryCode); // 엔진이 이 값으로 나라 변경
 		return r;
 	}
 

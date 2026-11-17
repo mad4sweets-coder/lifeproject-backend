@@ -7,6 +7,7 @@ import java.util.Map;
 import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.stereotype.Repository;
 
+import com.example.demo.event.dto.DestinationDTO;
 import com.example.demo.event.dto.EventChoiceDTO;
 import com.example.demo.event.dto.EventTemplateDTO;
 import com.example.demo.event.dto.GameEventDTO;
@@ -76,6 +77,14 @@ public class EventDAO {
 	// 역사 사건 유형 5종
 	public List<HistEventTypeDTO> selectHistTypes() {
 		return mybatis.selectList("Event.selectHistTypes");
+	}
+
+	// 이민 목적지 후보 (현재 나라 제외, GDP 높은 순)
+	public List<DestinationDTO> selectMigrateCandidates(String countryCode, int decade) {
+		Map<String, Object> param = new HashMap<>();
+		param.put("countryCode", countryCode);
+		param.put("decade", decade);
+		return mybatis.selectList("Event.selectMigrateCandidates", param);
 	}
 
 }

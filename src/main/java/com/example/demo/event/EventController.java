@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.example.demo.engine.LifeDTO;
+import com.example.demo.event.dto.DestinationDTO;
 import com.example.demo.event.dto.EventResultDTO;
 import com.example.demo.event.dto.EventTemplateDTO;
 import com.example.demo.event.dto.GameEventDTO;
@@ -40,7 +41,7 @@ public class EventController {
 		List<String> expIds = new ArrayList<>(); // 테스트: 아직 겪은 일 없음
 		List<EventResultDTO> result = new ArrayList<>();
 
-		for (EventTemplateDTO t : eServ.rollTemplates(age, year, country)) {
+		for (EventTemplateDTO t : eServ.rollTemplates(age, year, country, gender)) {
 			GameEventDTO e = eServ.pickEvent(t, age, gender, wealth, expIds);
 			if (e != null) {
 				result.add(eServ.buildResult(t, e, name, age, year, country));
@@ -53,7 +54,8 @@ public class EventController {
 	@GetMapping("/test/year")
 	public List<EventResultDTO> testYear(@RequestParam int age, @RequestParam int birthYear,
 			@RequestParam String country, @RequestParam String gender, @RequestParam int wealth,
-			@RequestParam String name, @RequestParam(defaultValue = "N") String married, @RequestParam(defaultValue = "0") int lifeId) {
+			@RequestParam String name, @RequestParam(defaultValue = "N") String married,
+			@RequestParam(defaultValue = "0") int lifeId) {
 		LifeDTO life = new LifeDTO();
 		life.setLifeId(lifeId);
 		life.setCurrentAge(age);
@@ -90,5 +92,22 @@ public class EventController {
 	public List<EventResultDTO> testHistRoll(@RequestParam String country, @RequestParam int year,
 			@RequestParam int age, @RequestParam String gender, @RequestParam String name) {
 		return eServ.rollHist(country, year, age, gender, name, new ArrayList<>());
+	}
+
+	// 테스트: 이민 목적지 후보 (최종 전에 삭제)
+	@GetMapping("/test/dest")
+	public List<DestinationDTO> testDest(@RequestParam String country, @RequestParam int year) {
+		return eServ.pickDestinations(country, year);
+	}
+
+	// 테스트: 목적지 고르기 (최종 전에 삭제)
+	@GetMapping("/test/destchoice")
+	public EventResultDTO testDestChoice(@RequestParam String country, @RequestParam String dest, @RequestParam int age,
+			@RequestParam int birthYear, @RequestParam String name, @RequestParam String eventId) {
+		LifeDTO life = new LifeDTO();
+		life.setCurrentCountry(country);
+		life.setBirthYear(birthYear);
+		life.setName(name);
+		return eServ.applyDestination(life, dest, age, eventId);
 	}
 }

@@ -7,15 +7,16 @@
 		SELECT * FROM EVENT_TEMPLATE ORDER BY TEMPLATE_ID
 	</select>
 
-	<!-- 그 연대 통계, 최근 연대보다 미래면 최근 연대 사용 (과거에 없는 연대는 결과 없음 → BASE_PROB)
-	     params: countryCode, decade -->
+	<!-- 나라·연대 통계: 이벤트 확률 계산용 (C09)
+	     TFR 출산 / UNEMPLOYMENT_RATE 실직 / NET_MIGRATION_RATE 이민 / LIFE_EXPECTANCY 질병·사별
+	     INFANT_MORTALITY, U5_MORTALITY 사별 (엔진 생명표 baseDeathProb에 넘김)
+	     미래 연도는 그 나라의 가장 최근 연대 통계 사용 (예: 2030 → 2020) -->
 	<select id="selectCountryStat" parameterType="map" resultType="map">
-		SELECT TFR, UNEMPLOYMENT_RATE, NET_MIGRATION_RATE, LIFE_EXPECTANCY
-		FROM COUNTRY_STAT
-		WHERE COUNTRY_CODE = #{countryCode}
-		AND DECADE = LEAST(#{decade},
-		(SELECT MAX(DECADE) FROM COUNTRY_STAT WHERE COUNTRY_CODE =
-		#{countryCode}))
+		SELECT TFR, UNEMPLOYMENT_RATE, NET_MIGRATION_RATE, LIFE_EXPECTANCY,
+		       INFANT_MORTALITY, U5_MORTALITY
+		  FROM COUNTRY_STAT
+		 WHERE COUNTRY_CODE = #{countryCode}
+		   AND DECADE = LEAST(#{decade}, (SELECT MAX(DECADE) FROM COUNTRY_STAT WHERE COUNTRY_CODE = #{countryCode}))
 	</select>
 
 	<!-- 걸린 템플릿 안에서 나이·성별·가정형편이 맞는 이벤트 후보
@@ -75,6 +76,17 @@
 	<!-- 역사 사건 유형 5종 효과 -->
 	<select id="selectHistTypes" resultType="com.example.demo.event.dto.HistEventTypeDTO">
 		SELECT * FROM HIST_EVENT_TYPE
+	</select>
+	
+	<!-- 이민 목적지 후보: 활성 나라 (현재 나라 제외), 그 시대 1인당 GDP 높은 순 -->
+	<select id="selectMigrateCandidates" parameterType="map" resultType="com.example.demo.event.dto.DestinationDTO">
+		SELECT C.COUNTRY_CODE, C.NAME_KO, S.GDP_PER_CAPITA
+		  FROM COUNTRY C
+		  JOIN COUNTRY_STAT S ON C.COUNTRY_CODE = S.COUNTRY_CODE
+		 WHERE C.IS_ACTIVE = 'Y'
+		   AND C.COUNTRY_CODE != #{countryCode}
+		   AND S.DECADE = LEAST(#{decade}, (SELECT MAX(DECADE) FROM COUNTRY_STAT))
+		 ORDER BY NVL(S.GDP_PER_CAPITA, 0) DESC
 	</select>
 	
 </mapper>

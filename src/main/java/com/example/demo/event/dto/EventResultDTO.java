@@ -26,6 +26,9 @@ public class EventResultDTO {
 	private boolean choice; // 선택 이벤트 여부
 	private List<EventChoiceDTO> choices;
 
+	private boolean needDestination; // 목적지를 골라야 하는지 (떠난다 선택 후)
+	private List<DestinationDTO> destinations; // 목적지 후보
+
 	public String getEventId() {
 		return eventId;
 	}
@@ -168,5 +171,21 @@ public class EventResultDTO {
 
 	public void setExpId(String expId) {
 		this.expId = expId;
+	}
+
+	public boolean isNeedDestination() {
+		return needDestination;
+	}
+
+	public void setNeedDestination(boolean needDestination) {
+		this.needDestination = needDestination;
+	}
+
+	public List<DestinationDTO> getDestinations() {
+		return destinations;
+	}
+
+	public void setDestinations(List<DestinationDTO> destinations) {
+		this.destinations = destinations;
 	}
 }
