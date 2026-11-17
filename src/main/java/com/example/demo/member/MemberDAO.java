@@ -56,4 +56,36 @@ public class MemberDAO {
 		return mybatis.update("member.convertGuestLife",
 				Map.of("memberId", memberId, "guestToken", guestToken));
 	}
+
+	// 마이페이지 (M04): 회원 1명의 마이페이지 정보 (없거나 탈퇴했으면 null)
+	public MyPageDTO selectMyPage(int memberId) {
+		return mybatis.selectOne("member.selectMyPage", memberId);
+	}
+
+	// M05·M06: 회원 번호로 1명 찾기 (비밀번호 비교용)
+	public MemberDTO selectById(int memberId) {
+		return mybatis.selectOne("member.selectById", memberId);
+	}
+
+	// M05: 나를 뺀 같은 닉네임 개수 (0이면 사용 가능)
+	public int countNicknameExceptMe(int memberId, String nickname) {
+		return mybatis.selectOne("member.countNicknameExceptMe",
+				Map.of("memberId", memberId, "nickname", nickname));
+	}
+
+	// M05: 나를 뺀 같은 이메일 개수
+	public int countEmailExceptMe(int memberId, String email) {
+		return mybatis.selectOne("member.countEmailExceptMe",
+				Map.of("memberId", memberId, "email", email));
+	}
+
+	// M05: 닉네임·이메일(·새 비밀번호) 저장
+	public int updateMember(MemberUpdateDTO dto) {
+		return mybatis.update("member.updateMember", dto);
+	}
+
+	// M06: 탈퇴 처리 (STATUS = 'WITHDRAWN')
+	public int updateWithdrawn(int memberId) {
+		return mybatis.update("member.updateWithdrawn", memberId);
+	}
 }

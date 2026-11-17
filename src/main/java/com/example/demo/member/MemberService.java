@@ -102,4 +102,66 @@ public class MemberService {
 		// 3. 비회원 인생에 회원 번호 채우기
 		return dao.convertGuestLife(memberId, guestToken) > 0;
 	}
+
+	// ===== 마이페이지 (M04) =====
+	// 회원 정보 + 포인트 + 살아본 인생 수 + 퀘스트 달성 수 + 진행 중인 인생 (없으면 null)
+	public MyPageDTO myPage(int memberId) {
+		return dao.selectMyPage(memberId);
+	}
+
+	// ===== 개인정보 수정 (M05) =====
+	// 문제가 있으면 오류 문구를, 성공하면 null 을 돌려준다
+	public String update(int memberId, MemberUpdateDTO dto) {
+
+		// 1. DB 에서 지금 내 정보 꺼내기 (비밀번호 비교용)
+		MemberDTO me = dao.selectById(memberId);
+		if (me == null || "WITHDRAWN".equals(me.getStatus())) return "회원 정보를 찾을 수 없습니다.";
+
+		// 2. 현재 비밀번호 확인 (BCrypt 비교)
+		if (dto.getCurrentPassword() == null || !encoder.matches(dto.getCurrentPassword(), me.getPassword())) {
+			return "현재 비밀번호가 올바르지 않습니다.";
+		}
+
+		// 3. 닉네임·이메일 형식 검사 (회원가입과 같은 규칙)
+		if (dto.getNickname() == null || dto.getNickname().length() < 2 || dto.getNickname().length() > 10) {
+			return "닉네임은 2~10자로 입력해 주세요.";
+		}
+		if (dto.getEmail() == null || !dto.getEmail().matches("^[\\w.+-]+@[\\w-]+\\.[\\w.]+$")) {
+			return "이메일 형식이 올바르지 않습니다.";
+		}
+
+		// 4. 중복 검사 (나 자신은 빼고 셈 → 닉네임 그대로 두면 통과)
+		if (dao.countNicknameExceptMe(memberId, dto.getNickname()) > 0) return "이미 사용 중인 닉네임입니다.";
+		if (dao.countEmailExceptMe(memberId, dto.getEmail()) > 0) return "이미 사용 중인 이메일입니다.";
+
+		// 5. 새 비밀번호: 비워 두면 안 바꿈(null), 입력했으면 검사 후 BCrypt 로 바꿔서 담기
+		String newPw = dto.getNewPassword();
+		if (newPw == null || newPw.isBlank()) {
+			dto.setNewPassword(null);
+		} else {
+			if (!newPw.matches("^(?=.*[a-zA-Z])(?=.*[0-9])(?=.*[^a-zA-Z0-9]).{8,20}$")) {
+				return "새 비밀번호는 영문·숫자·특수문자를 포함해 8~20자로 입력해 주세요.";
+			}
+			if (!newPw.equals(dto.getNewPasswordCheck())) {
+				return "새 비밀번호 확인이 일치하지 않습니다.";
+			}
+			dto.setNewPassword(encoder.encode(newPw));
+		}
+
+		// 6. 저장 (아이디는 바꾸지 않음)
+		dto.setMemberId(memberId);
+		dao.updateMember(dto);
+		return null; // 성공
+	}
+
+	// ===== 회원 탈퇴 (M06) =====
+	// 비밀번호가 맞으면 STATUS 를 'WITHDRAWN' 으로 바꾸고 true
+	// (회원 줄은 지우지 않음 → 인생·추모관 글과 외래키 오류 방지)
+	public boolean withdraw(int memberId, String password) {
+		MemberDTO me = dao.selectById(memberId);
+		if (me == null || "WITHDRAWN".equals(me.getStatus())) return false;
+		if (password == null || !encoder.matches(password, me.getPassword())) return false;
+
+		return dao.updateWithdrawn(memberId) > 0;
+	}
 }

@@ -60,4 +60,71 @@
 		  AND STATUS = 'PLAYING'
 	</update>
 
+	<!-- M04: 마이페이지
+	     ① MEMBER 에서 가입 정보·포인트
+	     ② 살아본 인생 수 = 끝난(ENDED) 인생 개수 (포기한 ABANDONED 는 빼기)
+	     ③ 퀘스트 달성 수 = 내 인생들의 LIFE_QUEST 중 ACHIEVED = 'Y' 개수
+	     ④ 진행 중인 인생 = LIFE 에서 STATUS = 'PLAYING' 인 것 (회원당 최대 1개라서 LEFT JOIN 해도 1줄)
+	        없으면 LEFT JOIN 이라 l.~ 값이 전부 NULL 로 나옴
+	     (map-underscore-to-camel-case 덕분에 LIFE_COUNT → lifeCount 로 자동으로 담김) -->
+	<select id="selectMyPage" parameterType="int" resultType="com.example.demo.member.MyPageDTO">
+		SELECT m.LOGIN_ID,
+		       m.NICKNAME,
+		       m.EMAIL,
+		       TO_CHAR(m.JOIN_DATE, 'YYYY-MM-DD') AS JOIN_DATE,
+		       m.POINT,
+		       (SELECT COUNT(*) FROM LIFE x
+		         WHERE x.MEMBER_ID = m.MEMBER_ID AND x.STATUS = 'ENDED') AS LIFE_COUNT,
+		       (SELECT COUNT(*) FROM LIFE_QUEST lq
+		          JOIN LIFE x ON x.LIFE_ID = lq.LIFE_ID
+		         WHERE x.MEMBER_ID = m.MEMBER_ID AND lq.ACHIEVED = 'Y') AS QUEST_DONE,
+		       l.LIFE_ID,
+		       l.NAME        AS LIFE_NAME,
+		       c.NAME_KO     AS COUNTRY_NAME,
+		       l.CURRENT_AGE
+		FROM MEMBER m
+		LEFT JOIN LIFE l    ON l.MEMBER_ID = m.MEMBER_ID AND l.STATUS = 'PLAYING'
+		LEFT JOIN COUNTRY c ON c.COUNTRY_CODE = l.CURRENT_COUNTRY
+		WHERE m.MEMBER_ID = #{memberId}
+		  AND m.STATUS = 'ACTIVE'
+	</select>
+
+	<!-- M05·M06: 회원 번호로 1명 찾기 (비밀번호·상태 확인용) -->
+	<select id="selectById" parameterType="int" resultType="com.example.demo.member.MemberDTO">
+		SELECT MEMBER_ID, LOGIN_ID, PASSWORD, NICKNAME, EMAIL, STATUS
+		FROM MEMBER
+		WHERE MEMBER_ID = #{memberId}
+	</select>
+
+	<!-- M05: 나(memberId)를 뺀 같은 닉네임 개수 -->
+	<select id="countNicknameExceptMe" parameterType="map" resultType="int">
+		SELECT COUNT(*) FROM MEMBER
+		WHERE NICKNAME = #{nickname} AND MEMBER_ID &lt;&gt; #{memberId}
+	</select>
+
+	<!-- M05: 나(memberId)를 뺀 같은 이메일 개수 -->
+	<select id="countEmailExceptMe" parameterType="map" resultType="int">
+		SELECT COUNT(*) FROM MEMBER
+		WHERE EMAIL = #{email} AND MEMBER_ID &lt;&gt; #{memberId}
+	</select>
+
+	<!-- M05: 개인정보 저장
+	     newPassword 가 null 이면(비워 두면) PASSWORD 줄은 빠짐 → 비밀번호 그대로 -->
+	<update id="updateMember" parameterType="com.example.demo.member.MemberUpdateDTO">
+		UPDATE MEMBER
+		SET NICKNAME = #{nickname},
+		    EMAIL = #{email}
+		    <if test="newPassword != null">
+		    , PASSWORD = #{newPassword}
+		    </if>
+		WHERE MEMBER_ID = #{memberId}
+	</update>
+
+	<!-- M06: 회원 탈퇴 (줄을 지우지 않고 상태만 바꿈) -->
+	<update id="updateWithdrawn" parameterType="int">
+		UPDATE MEMBER
+		SET STATUS = 'WITHDRAWN'
+		WHERE MEMBER_ID = #{memberId} AND STATUS = 'ACTIVE'
+	</update>
+
 </mapper>
