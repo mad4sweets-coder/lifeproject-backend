@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+	"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.demo.result.ResultDao">
+
+	<!-- ================= C18 인생 결과 ================= -->
+
+	<!-- 요약: 나라(당시 명칭 병기), 출생 연도, 수명, 사망 원인, 학력, 직업, 평균 소득, 소득 상위 %, 인생 점수 -->
+	<select id="selectResult" parameterType="int" resultType="com.example.demo.result.ResultDTO">
+		SELECT l.LIFE_ID                AS lifeId,
+		       l.NAME                   AS name,
+		       l.GENDER                 AS gender,
+		       l.BIRTH_COUNTRY          AS birthCountry,
+		       bc.NAME_KO               AS countryName,
+		       (SELECT h.HIST_NAME
+		          FROM COUNTRY_NAME_HIST h
+		         WHERE h.COUNTRY_CODE = l.BIRTH_COUNTRY
+		           AND h.START_YEAR &lt;= l.BIRTH_YEAR
+		           AND (h.END_YEAR IS NULL OR h.END_YEAR &gt;= l.BIRTH_YEAR)
+		           AND ROWNUM = 1)      AS histName,
+		       l.CURRENT_COUNTRY        AS currentCountry,
+		       cc.NAME_KO               AS currentCountryName,
+		       l.BIRTH_YEAR             AS birthYear,
+		       l.DEATH_AGE              AS deathAge,
+		       l.BIRTH_YEAR + l.DEATH_AGE AS deathYear,
+		       l.DEATH_CAUSE            AS deathCause,
+		       (SELECT s.LIFE_EXPECTANCY
+		          FROM COUNTRY_STAT s
+		         WHERE s.COUNTRY_CODE = l.BIRTH_COUNTRY
+		           AND s.DECADE = TRUNC(l.BIRTH_YEAR / 10) * 10) AS lifeExpectancy,
+		       l.EDU_LEVEL              AS eduLevel,
+		       l.SCHOOL_STATUS          AS schoolStatus,
+		       l.JOB_ID                 AS jobId,
+		       j.JOB_NAME               AS jobName,
+		       l.JOB_STATUS             AS jobStatus,
+		       l.AVG_INCOME             AS avgIncome,
+		       l.INCOME_TOP_PCT         AS incomeTopPct,
+		       l.LIFE_SCORE             AS lifeScore,
+		       ROUND(l.HEALTH)          AS health,
+		       ROUND(l.HAPPINESS)       AS happiness,
+		       ROUND(l.KNOWLEDGE)       AS knowledge,
+		       ROUND(l.RELATION)        AS relation,
+		       l.IS_MARRIED             AS marriedYn,
+		       l.CHILD_COUNT            AS childCount,
+		       l.START_TYPE             AS startType,
+		       l.STATUS                 AS status,
+		       (SELECT m.POST_ID FROM MEMORIAL_POST m WHERE m.LIFE_ID = l.LIFE_ID) AS memorialPostId
+		FROM LIFE l
+		JOIN COUNTRY bc ON bc.COUNTRY_CODE = l.BIRTH_COUNTRY
+		JOIN COUNTRY cc ON cc.COUNTRY_CODE = l.CURRENT_COUNTRY
+		LEFT JOIN JOB j ON j.JOB_ID = l.JOB_ID
+		WHERE l.LIFE_ID = #{lifeId}
+	</select>
+
+	<!-- 능력치 그래프: 나이별 기록 -->
+	<select id="selectYearLogs" parameterType="int" resultType="com.example.demo.result.YearLogDTO">
+		SELECT y.AGE          AS age,
+		       y.YEAR_NO      AS yearNo,
+		       y.COUNTRY_CODE AS countryCode,
+		       y.HEALTH       AS health,
+		       y.HAPPINESS    AS happiness,
+		       y.KNOWLEDGE    AS knowledge,
+		       y.RELATION     AS relation,
+		       y.EDU_LEVEL    AS eduLevel,
+		       j.JOB_NAME     AS jobName,
+		       y.INCOME       AS income,
+		       y.ASSETS       AS assets,
+		       y.FOCUS_CODE   AS focusCode
+		FROM LIFE_YEAR_LOG y
+		LEFT JOIN JOB j ON j.JOB_ID = y.JOB_ID
+		WHERE y.LIFE_ID = #{lifeId}
+		ORDER BY y.AGE
+	</select>
+
+	<!-- 인생 기록 전체: 그해 일어난 일 (선택 이벤트면 고른 선택지 문구도) -->
+	<select id="selectEventLogs" parameterType="int" resultType="com.example.demo.result.EventLogDTO">
+		SELECT e.LOG_ID      AS logId,
+		       e.AGE         AS age,
+		       e.YEAR_NO     AS yearNo,
+		       e.EVENT_ID    AS eventId,
+		       c.CHOICE_TEXT AS choiceText,
+		       e.LOG_TEXT    AS logText,
+		       e.IS_AI       AS isAi
+		FROM LIFE_EVENT_LOG e
+		LEFT JOIN EVENT_CHOICE c ON c.CHOICE_ID = e.CHOICE_ID
+		WHERE e.LIFE_ID = #{lifeId}
+		ORDER BY e.AGE, e.LOG_ID
+	</select>
+
+	<!-- 퀘스트 달성 여부 (비회원 인생은 퀘스트가 없어서 빈 목록) -->
+	<select id="selectQuests" parameterType="int" resultType="com.example.demo.result.QuestResultDTO">
+		SELECT q.QUEST_ID    AS questId,
+		       q.QUEST_NAME  AS questName,
+		       q.DESCRIPTION AS description,
+		       lq.ACHIEVED   AS achieved,
+		       lq.POINT_GIVEN AS pointGiven
+		FROM LIFE_QUEST lq
+		JOIN QUEST q ON q.QUEST_ID = lq.QUEST_ID
+		WHERE lq.LIFE_ID = #{lifeId}
+		ORDER BY q.QUEST_ID
+	</select>
+
+	<!-- 이 인생으로 받은 포인트 합계 (C12 퀘스트 지급) -->
+	<select id="selectEarnedPoint" parameterType="int" resultType="int">
+		SELECT NVL(SUM(AMOUNT), 0)
+		FROM POINT_HISTORY
+		WHERE LIFE_ID = #{lifeId}
+		  AND REASON = 'QUEST'
+	</select>
+
+</mapper>
