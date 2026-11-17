@@ -8,6 +8,7 @@ public class EngineRequestDTO {
 	private String guestToken; // 비회원 임시 토큰 (회원은 Authorization 헤더 사용)
 	private String focus;      // 집중 코드 (C04)
 	private String jobId;      // 직업 코드 (C06)
+	private int choiceId;      // 선택지 번호 (C09 선택 이벤트)
 
 	public int getDecade() {
 		return decade;
@@ -47,5 +48,13 @@ public class EngineRequestDTO {
 
 	public void setJobId(String jobId) {
 		this.jobId = jobId;
+	}
+
+	public int getChoiceId() {
+		return choiceId;
+	}
+
+	public void setChoiceId(int choiceId) {
+		this.choiceId = choiceId;
 	}
 }

@@ -38,6 +38,10 @@ public interface EngineDao {
 	// C05 경험
 	int insertExperience(ExperienceDTO exp);
 
+	// C09 이벤트 기록
+	int insertEventLog(EventLogDTO log);
+	String selectPendingText(LifeDTO life);
+
 	// C06 진학
 	RegionStatDTO selectRegionStat(LifeDTO life);
 
