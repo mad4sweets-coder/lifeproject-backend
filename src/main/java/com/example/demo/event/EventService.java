@@ -58,17 +58,21 @@ public class EventService {
 		double base = t.getBaseProb() == null ? 0 : t.getBaseProb();
 
 		switch (t.getProbMethod()) {
-		case "TFR": // 출산: 합계출산율 ÷ 25 (가임 기간)
+		case "TFR": // 출산: 합계출산율 ÷ 출산 가능 기간 (템플릿 나이 범위)
 			Double tfr = getStat(stat, "TFR");
-			return tfr == null ? base : tfr / 25;
+			int years = t.getMaxAge() - t.getMinAge() + 1;
+			return tfr == null ? base : tfr / years;
 		case "UNEMPLOYMENT": // 실직: 실업률 ÷ 100
 			Double unemp = getStat(stat, "UNEMPLOYMENT_RATE");
 			return unemp == null ? base : unemp / 100;
-		case "NET_MIGRATION": // 이민: 순이민률이 음수(유출)일 때만 반영, 최소 0.2%
+		case "NET_MIGRATION": // 이민: 기본 확률 × (1 - 순이민률‰), 배율 0.5~3.0배 제한 (유출 많을수록 ↑)
 			Double mig = getStat(stat, "NET_MIGRATION_RATE");
-			return mig == null ? base : Math.max(-mig / 1000, 0.002);
+			if (mig == null) return base; // 통계 없으면 기본 확률
+			double migRate = Math.min(Math.max(1 - mig, 0.5), 3.0); // 바닥 0.5: 유입국도 최소 절반 / 천장 3.0: 극단값 방지
+			return base * migRate;
 		case "DEATH_CAUSE": // 질병: 기본 확률 × 나이대 배율 × 나라 건강 배율
 			Double le = getStat(stat, "LIFE_EXPECTANCY");
+			// 나라 건강 배율 = 75(기준 기대수명) ÷ 기대수명, 0.8~2.0배 제한 / 통계 없으면 1.0
 			double countryRate = (le == null) ? 1.0 : Math.min(Math.max(75 / le, 0.8), 2.0);
 			return base * diseaseAgeRate(age) * countryRate;
 		default: // FIXED
