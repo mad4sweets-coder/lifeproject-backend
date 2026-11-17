@@ -201,4 +201,91 @@
 		WHERE MEMBER_ID = #{memberId}
 	</update>
 
+	<!-- C01·M08: 내 특성 4종 레벨 (화면에 늘 같은 순서로 보이게 INVEST → DISEASE → LOVE → STUDY) -->
+	<select id="selectMyTraits" parameterType="int" resultType="com.example.demo.member.MemberTraitDTO">
+		SELECT t.TRAIT_ID, t.TRAIT_NAME, mt.TRAIT_LEVEL, t.MAX_LEVEL, t.DESCRIPTION
+		FROM MEMBER_TRAIT mt
+		JOIN TRAIT t ON t.TRAIT_ID = mt.TRAIT_ID
+		WHERE mt.MEMBER_ID = #{memberId}
+		ORDER BY DECODE(t.TRAIT_ID, 'INVEST', 1, 'DISEASE', 2, 'LOVE', 3, 'STUDY', 4, 9)
+	</select>
+
+	<!-- ================= M07 전생 기록 ================= -->
+
+	<!-- 끝난(ENDED) 인생 목록 - Oracle 11g 페이지 나누기 (ROWNUM 2단계)
+	     ① 안쪽: 내 끝난 인생 + 몇 번째 인생인지(LIFE_NO, 오래된 것이 1번째) + 퀘스트·포인트, 정렬
+	     ② 가운데: 정렬된 순서에 ROWNUM(줄 번호) 붙이고 end 줄까지만
+	     ③ 바깥: start 줄 다음부터 → 딱 10줄 -->
+	<select id="selectMyLives" parameterType="map" resultType="com.example.demo.member.LifeRecordDTO">
+		SELECT *
+		FROM (
+			SELECT a.*, ROWNUM AS RN
+			FROM (
+				SELECT ROW_NUMBER() OVER (ORDER BY l.LIFE_ID) AS LIFE_NO,
+				       l.LIFE_ID,
+				       c.NAME_KO     AS COUNTRY_NAME,
+				       l.BIRTH_YEAR,
+				       l.DEATH_AGE,
+				       l.DEATH_CAUSE,
+				       TO_CHAR(l.ENDED_AT, 'YYYY-MM-DD') AS ENDED_AT,
+				       (SELECT COUNT(*) FROM LIFE_QUEST q WHERE q.LIFE_ID = l.LIFE_ID) AS QUEST_TOTAL,
+				       (SELECT COUNT(*) FROM LIFE_QUEST q WHERE q.LIFE_ID = l.LIFE_ID AND q.ACHIEVED = 'Y') AS QUEST_DONE,
+				       (SELECT NVL(SUM(p.AMOUNT), 0) FROM POINT_HISTORY p
+				         WHERE p.LIFE_ID = l.LIFE_ID AND p.REASON = 'QUEST') AS POINT
+				FROM LIFE l
+				JOIN COUNTRY c ON c.COUNTRY_CODE = l.BIRTH_COUNTRY
+				WHERE l.MEMBER_ID = #{memberId}
+				  AND l.STATUS = 'ENDED'
+				<choose>
+					<when test="sort == 'age'">ORDER BY l.DEATH_AGE DESC NULLS LAST, l.LIFE_ID DESC</when>
+					<otherwise>ORDER BY l.LIFE_ID DESC</otherwise>
+				</choose>
+			) a
+			WHERE ROWNUM &lt;= #{end}
+		)
+		WHERE RN &gt; #{start}
+	</select>
+
+	<!-- 끝난 인생 개수 (페이지 번호 계산용) -->
+	<select id="countMyEndedLives" parameterType="int" resultType="int">
+		SELECT COUNT(*) FROM LIFE WHERE MEMBER_ID = #{memberId} AND STATUS = 'ENDED'
+	</select>
+
+	<!-- 퀘스트 달성 수 (내 모든 인생) -->
+	<select id="countMyQuestDone" parameterType="int" resultType="int">
+		SELECT COUNT(*) FROM LIFE_QUEST q
+		JOIN LIFE l ON l.LIFE_ID = q.LIFE_ID
+		WHERE l.MEMBER_ID = #{memberId} AND q.ACHIEVED = 'Y'
+	</select>
+
+	<!-- 퀘스트로 받은 포인트 합계 -->
+	<select id="sumMyQuestPoint" parameterType="int" resultType="int">
+		SELECT NVL(SUM(AMOUNT), 0) FROM POINT_HISTORY
+		WHERE MEMBER_ID = #{memberId} AND REASON = 'QUEST'
+	</select>
+
+	<!-- ================= M08 특성 강화 ================= -->
+
+	<!-- 특성 레벨 +1 : 최대 레벨(TRAIT.MAX_LEVEL)보다 낮을 때만 바뀜 -->
+	<update id="increaseTraitLevel" parameterType="map">
+		UPDATE MEMBER_TRAIT mt
+		SET TRAIT_LEVEL = TRAIT_LEVEL + 1
+		WHERE mt.MEMBER_ID = #{memberId}
+		  AND mt.TRAIT_ID = #{traitId}
+		  AND mt.TRAIT_LEVEL &lt; (SELECT t.MAX_LEVEL FROM TRAIT t WHERE t.TRAIT_ID = mt.TRAIT_ID)
+	</update>
+
+	<!-- 포인트 -1 : 1점 이상일 때만 바뀜 (DB 값으로 다시 확인) -->
+	<update id="decreasePoint" parameterType="int">
+		UPDATE MEMBER
+		SET POINT = POINT - 1
+		WHERE MEMBER_ID = #{memberId} AND POINT &gt;= 1
+	</update>
+
+	<!-- 포인트 내역 (사용) -->
+	<insert id="insertTraitLevelUpHistory" parameterType="int">
+		INSERT INTO POINT_HISTORY (POINT_ID, MEMBER_ID, LIFE_ID, AMOUNT, REASON)
+		VALUES (SEQ_POINT_HISTORY.NEXTVAL, #{memberId}, NULL, -1, 'TRAIT_LEVELUP')
+	</insert>
+
 </mapper>
