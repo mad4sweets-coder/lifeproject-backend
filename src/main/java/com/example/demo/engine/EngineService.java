@@ -3,8 +3,10 @@ package com.example.demo.engine;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.springframework.stereotype.Service;
 
@@ -140,16 +142,82 @@ public class EngineService {
 
 	// ================= 본인 확인 =================
 
-	// 내 인생인지 확인: 회원 인생은 로그인한 회원 번호, 비회원 인생은 임시 토큰이 맞아야 함
-	public boolean isMyLife(int lifeId, Integer memberId, String guestToken) {
+	// 내 인생 불러오기: 회원 인생은 로그인한 회원 번호, 비회원 인생은 임시 토큰이 맞아야 함
+	// 내 인생이 아니거나 없으면 null
+	// (DB 왕복 줄이기: 예전엔 본인 확인·선택 대기 확인·진행에서 인생을 3번 읽었는데 → 여기서 1번만 읽고 넘겨줌)
+	public LifeDTO loadMyLife(int lifeId, Integer memberId, String guestToken) {
 		LifeDTO life = engineDao.selectLife(lifeId);
 		if (life == null) {
-			return false;
+			return null;
 		}
+		boolean mine;
 		if (life.getMemberId() != null) {
-			return life.getMemberId().equals(memberId);
+			mine = life.getMemberId().equals(memberId);
+		} else {
+			mine = life.getGuestToken() != null && life.getGuestToken().equals(guestToken);
 		}
-		return life.getGuestToken() != null && life.getGuestToken().equals(guestToken);
+		return mine ? life : null;
+	}
+
+	// 선택 이벤트를 아직 안 골랐는지 (다음 해로 못 넘어감)
+	public boolean isWaitingChoice(LifeDTO life) {
+		return life.getPendingEventId() != null;
+	}
+
+	// ================= 통계 캐시 (DB 왕복 줄이기) =================
+	// 나라·권역 통계와 직업 목록은 게임 중 바뀌지 않는 데이터라 한 번 읽으면 서버 메모리에 보관
+	// (데이터를 DB에서 고쳤으면 서버를 재시작해야 반영됨)
+	private final Map<String, CountryStatDTO> yearStatCache = new ConcurrentHashMap<>();
+	private final Map<String, RegionStatDTO> regionStatCache = new ConcurrentHashMap<>();
+	private List<JobDTO> jobCache;
+
+	// 캐시 열쇠: 사는 나라 + 그해의 연대 (예: KOR_1960)
+	private String statKey(LifeDTO life) {
+		return life.getCurrentCountry() + "_" + (life.getBirthYear() + life.getCurrentAge()) / 10 * 10;
+	}
+
+	// 그해 사는 나라 통계
+	private CountryStatDTO yearStat(LifeDTO life) {
+		String key = statKey(life);
+		CountryStatDTO s = yearStatCache.get(key);
+		if (s == null) {
+			s = engineDao.selectYearStat(life);
+			if (s != null) {
+				yearStatCache.put(key, s);
+			}
+		}
+		return s;
+	}
+
+	// 그해 사는 나라 권역 통계 (진학률·산업 비율)
+	private RegionStatDTO regionStat(LifeDTO life) {
+		String key = statKey(life);
+		RegionStatDTO r = regionStatCache.get(key);
+		if (r == null) {
+			r = engineDao.selectRegionStat(life);
+			if (r != null) {
+				regionStatCache.put(key, r);
+			}
+		}
+		return r;
+	}
+
+	// 직업 목록 전체
+	private List<JobDTO> jobs() {
+		if (jobCache == null) {
+			jobCache = engineDao.selectJobs();
+		}
+		return jobCache;
+	}
+
+	// 직업 하나 찾기 (없으면 null)
+	private JobDTO findJob(String jobId) {
+		for (JobDTO job : jobs()) {
+			if (job.getJobId().equals(jobId)) {
+				return job;
+			}
+		}
+		return null;
 	}
 
 	// ================= C03 이어하기 =================
@@ -173,16 +241,16 @@ public class EngineService {
 	}
 
 	// ================= C03 1년 진행 =================
-	public LifeDTO nextYear(int lifeId) {
+	// life: 컨트롤러에서 loadMyLife로 불러온 인생
+	public LifeDTO nextYear(LifeDTO life) {
 
-		// 1. 인생 불러오기 (없거나 끝난 인생이면 진행 안 함)
-		LifeDTO life = engineDao.selectLife(lifeId);
-		if (life == null || !life.getStatus().equals("PLAYING")) {
+		// 1. 끝난 인생이면 진행 안 함
+		if (!life.getStatus().equals("PLAYING")) {
 			return null;
 		}
 
 		// 그해 사는 나라 통계 (사망 판정·진학에 사용)
-		CountryStatDTO stat = engineDao.selectYearStat(life);
+		CountryStatDTO stat = yearStat(life);
 
 		// ① 집중 효과 (C04): 고르지 않았으면 나이대 기본값
 		if (life.getStageCode() != null && life.getFocusCode() == null) {
@@ -240,9 +308,8 @@ public class EngineService {
 	// ================= C04 나이대별 집중 선택 =================
 
 	// 집중 선택 저장 (그 나이대에서 고를 수 있는 것만)
-	public LifeDTO chooseFocus(int lifeId, String focusCode) {
-		LifeDTO life = engineDao.selectLife(lifeId);
-		if (life == null || !life.getStatus().equals("PLAYING") || life.getStageCode() == null) {
+	public LifeDTO chooseFocus(LifeDTO life, String focusCode) {
+		if (!life.getStatus().equals("PLAYING") || life.getStageCode() == null) {
 			return null;
 		}
 		if (!focusOptions(life.getStageCode(), life).contains(focusCode)) {
@@ -256,16 +323,15 @@ public class EngineService {
 	// ================= C06-2 직업 선택 =================
 
 	// 제안받은 직업 중 하나를 선택 (필요 학력을 갖춘 직업만)
-	public LifeDTO chooseJob(int lifeId, String jobId) {
-		LifeDTO life = engineDao.selectLife(lifeId);
-		if (life == null || !life.getStatus().equals("PLAYING")) {
+	public LifeDTO chooseJob(LifeDTO life, String jobId) {
+		if (!life.getStatus().equals("PLAYING")) {
 			return null;
 		}
 		if (life.getCurrentAge() < 15 || "ENROLLED".equals(life.getSchoolStatus())
 				|| "EMPLOYED".equals(life.getJobStatus()) || "RETIRED".equals(life.getJobStatus())) {
 			return null; // 지금은 직업을 고를 수 없는 상태
 		}
-		JobDTO job = engineDao.selectJob(jobId);
+		JobDTO job = findJob(jobId);
 		if (job == null || levelIndex(job.getRequiredEdu()) > finishedLevel(life)) {
 			return null; // 없는 직업이거나 학력이 부족
 		}
@@ -372,10 +438,29 @@ public class EngineService {
 		case "BRAIN":    kn = 3; hp = 1; re = 1;    break; // 두뇌 활동
 		case "REST":     hl = 2; hp = 2; kn = -1;   break; // 휴식
 		}
-		life.setHealth(life.getHealth() + hl);
-		life.setHappiness(life.getHappiness() + hp);
-		life.setKnowledge(life.getKnowledge() + kn);
-		life.setRelation(life.getRelation() + re);
+		life.setHealth(life.getHealth() + soft(life.getHealth(), hl));
+		life.setHappiness(life.getHappiness() + soft(life.getHappiness(), hp));
+		life.setKnowledge(life.getKnowledge() + soft(life.getKnowledge(), kn));
+		life.setRelation(life.getRelation() + soft(life.getRelation(), re));
+	}
+
+	// 집중 효과 체감 (밸런스 테스트 11-17: 지식이 99에 몰리는 문제)
+	// 올리는 효과는 높을수록 덜 오르고(50이면 그대로, 75면 절반, 100이면 0)
+	// 내리는 효과는 낮을수록 덜 내려감(50이면 그대로, 25면 절반, 0이면 0)
+	private double soft(double now, double add) {
+		double rate;
+		if (add > 0) {
+			rate = (100 - now) / 50;
+		} else {
+			rate = now / 50;
+		}
+		if (rate > 1) {
+			rate = 1;
+		}
+		if (rate < 0) {
+			rate = 0;
+		}
+		return add * rate;
 	}
 
 	// ================= C05 능력치 =================
@@ -534,7 +619,7 @@ public class EngineService {
 
 		// 권역 진학률 (%) - 데이터가 없으면 기본값
 		double elem = 80, middle = 60, high = 40, uni = 15;
-		RegionStatDTO rs = engineDao.selectRegionStat(life);
+		RegionStatDTO rs = regionStat(life);
 		if (rs != null) {
 			if (rs.getEnrollElem() != null) {
 				elem = rs.getEnrollElem();
@@ -665,7 +750,7 @@ public class EngineService {
 	private List<JobDTO> offerJobs(LifeDTO life) {
 		// 권역 산업 비율 (%) - 데이터가 없으면 기본값
 		double agri = 40, industry = 25, service = 35;
-		RegionStatDTO rs = engineDao.selectRegionStat(life);
+		RegionStatDTO rs = regionStat(life);
 		if (rs != null) {
 			if (rs.getAgriRate() != null) {
 				agri = rs.getAgriRate();
@@ -682,7 +767,7 @@ public class EngineService {
 		List<JobDTO> pool = new ArrayList<>();
 		List<Double> weights = new ArrayList<>();
 		int finished = finishedLevel(life);
-		for (JobDTO job : engineDao.selectJobs()) {
+		for (JobDTO job : jobs()) {
 			if (levelIndex(job.getRequiredEdu()) > finished) {
 				continue; // 학력 부족
 			}
@@ -782,7 +867,10 @@ public class EngineService {
 				}
 				cost = income * (1 - saveRate);
 			} else {
-				cost = gdp * 0.3;
+				// 소득이 없으면 모아둔 재산으로 생활 (나라 평균의 30%)
+				// 재산이 바닥나면 가족 도움으로 버팀 → 생활비로는 빚이 생기지 않음 (빚은 이벤트로만)
+				// (밸런스 테스트 11-17: 정년 넘은 실직자가 연금 없이 32년간 빚만 쌓이던 문제)
+				cost = Math.min(gdp * 0.3, Math.max(0, life.getAssets()));
 			}
 		}
 
@@ -864,9 +952,8 @@ public class EngineService {
 
 	// ================= C09 선택 이벤트: 선택지 고르기 =================
 	// 선택 이벤트는 작년(나이+1 하기 전)에 일어났으므로 그 나이로 기록
-	public LifeDTO chooseEvent(int lifeId, int choiceId) {
-		LifeDTO life = engineDao.selectLife(lifeId);
-		if (life == null || !life.getStatus().equals("PLAYING") || life.getPendingEventId() == null) {
+	public LifeDTO chooseEvent(LifeDTO life, int choiceId) {
+		if (!life.getStatus().equals("PLAYING") || life.getPendingEventId() == null) {
 			return null; // 고를 선택이 없음
 		}
 		int age = life.getCurrentAge() - 1;
@@ -886,12 +973,6 @@ public class EngineService {
 
 		engineDao.updateLifeYear(life);
 		return life;
-	}
-
-	// 선택을 기다리는 중인지 (다음 해로 못 넘어감)
-	public boolean isWaitingChoice(int lifeId) {
-		LifeDTO life = engineDao.selectLife(lifeId);
-		return life != null && life.getPendingEventId() != null;
 	}
 
 	// 이어하기·새로고침 때 선택 창 다시 띄우기

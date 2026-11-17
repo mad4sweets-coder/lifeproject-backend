@@ -84,15 +84,15 @@ public class EngineController {
 	@PostMapping("/api/engine/next")
 	public ResponseEntity<?> nextYear(@RequestBody EngineRequestDTO req,
 			@RequestHeader(value = "Authorization", required = false) String auth) {
-		int lifeId = req.getLifeId();
-		String guestToken = req.getGuestToken();
-		if (!engineService.isMyLife(lifeId, loginMemberId(auth), guestToken)) {
+		// 인생은 여기서 1번만 읽고 서비스에 넘김 (DB 왕복 줄이기)
+		LifeDTO life = engineService.loadMyLife(req.getLifeId(), loginMemberId(auth), req.getGuestToken());
+		if (life == null) {
 			return ResponseEntity.status(403).body("내 인생이 아니에요.");
 		}
-		if (engineService.isWaitingChoice(lifeId)) {
+		if (engineService.isWaitingChoice(life)) {
 			return ResponseEntity.status(409).body("선택 이벤트를 먼저 골라 주세요.");
 		}
-		LifeDTO life = engineService.nextYear(lifeId);
+		life = engineService.nextYear(life);
 		if (life == null) {
 			return ResponseEntity.badRequest()
 					.body("이미 끝난 인생이에요.");
@@ -104,13 +104,11 @@ public class EngineController {
 	@PostMapping("/api/engine/focus")
 	public ResponseEntity<?> chooseFocus(@RequestBody EngineRequestDTO req,
 			@RequestHeader(value = "Authorization", required = false) String auth) {
-		int lifeId = req.getLifeId();
-		String focus = req.getFocus();
-		String guestToken = req.getGuestToken();
-		if (!engineService.isMyLife(lifeId, loginMemberId(auth), guestToken)) {
+		LifeDTO life = engineService.loadMyLife(req.getLifeId(), loginMemberId(auth), req.getGuestToken());
+		if (life == null) {
 			return ResponseEntity.status(403).body("내 인생이 아니에요.");
 		}
-		LifeDTO life = engineService.chooseFocus(lifeId, focus);
+		life = engineService.chooseFocus(life, req.getFocus());
 		if (life == null) {
 			return ResponseEntity.badRequest()
 					.body("지금 나이대에서 고를 수 없는 집중이거나, 진행 중인 인생이 아니에요.");
@@ -122,13 +120,11 @@ public class EngineController {
 	@PostMapping("/api/engine/job")
 	public ResponseEntity<?> chooseJob(@RequestBody EngineRequestDTO req,
 			@RequestHeader(value = "Authorization", required = false) String auth) {
-		int lifeId = req.getLifeId();
-		String jobId = req.getJobId();
-		String guestToken = req.getGuestToken();
-		if (!engineService.isMyLife(lifeId, loginMemberId(auth), guestToken)) {
+		LifeDTO life = engineService.loadMyLife(req.getLifeId(), loginMemberId(auth), req.getGuestToken());
+		if (life == null) {
 			return ResponseEntity.status(403).body("내 인생이 아니에요.");
 		}
-		LifeDTO life = engineService.chooseJob(lifeId, jobId);
+		life = engineService.chooseJob(life, req.getJobId());
 		if (life == null) {
 			return ResponseEntity.badRequest()
 					.body("지금은 직업을 고를 수 없거나, 학력이 부족한 직업이에요.");
@@ -140,12 +136,11 @@ public class EngineController {
 	@PostMapping("/api/engine/choice")
 	public ResponseEntity<?> chooseEvent(@RequestBody EngineRequestDTO req,
 			@RequestHeader(value = "Authorization", required = false) String auth) {
-		int lifeId = req.getLifeId();
-		String guestToken = req.getGuestToken();
-		if (!engineService.isMyLife(lifeId, loginMemberId(auth), guestToken)) {
+		LifeDTO life = engineService.loadMyLife(req.getLifeId(), loginMemberId(auth), req.getGuestToken());
+		if (life == null) {
 			return ResponseEntity.status(403).body("내 인생이 아니에요.");
 		}
-		LifeDTO life = engineService.chooseEvent(lifeId, req.getChoiceId());
+		life = engineService.chooseEvent(life, req.getChoiceId());
 		if (life == null) {
 			return ResponseEntity.badRequest()
 					.body("지금 고를 선택 이벤트가 없거나, 이 이벤트의 선택지가 아니에요.");
