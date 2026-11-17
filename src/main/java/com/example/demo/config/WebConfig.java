@@ -26,6 +26,7 @@ public class WebConfig implements WebMvcConfigurer {
 				.excludePathPatterns(
 						"/api/members",          // 회원가입
 						"/api/members/login",    // 로그인
-						"/api/members/check-*"); // 아이디·닉네임·이메일 중복 확인
+						"/api/members/check-*",
+						"/api/members/find/**"); // 아이디·닉네임·이메일 중복 확인
 	}
 }

@@ -88,4 +88,53 @@ public class MemberDAO {
 	public int updateWithdrawn(int memberId) {
 		return mybatis.update("member.updateWithdrawn", memberId);
 	}
+	
+	// ===== 아이디·비밀번호 찾기 (M09) =====
+
+	// 1분 안에 만든 인증번호 개수 (0이면 보내도 됨)
+	public int countRecentAuth(String email, String purpose) {
+		return mybatis.selectOne("member.countRecentAuth",
+				Map.of("email", email, "purpose", purpose));
+	}
+
+	// 인증번호 저장 (유효시간 5분은 SQL 안에서 계산)
+	public int insertEmailAuth(String email, String code, String purpose) {
+		return mybatis.insert("member.insertEmailAuth",
+				Map.of("email", email, "code", code, "purpose", purpose));
+	}
+
+	// 이메일로 회원 찾기 (탈퇴 회원은 제외, 없으면 null)
+	public MemberDTO selectActiveByEmail(String email) {
+		return mybatis.selectOne("member.selectActiveByEmail", email);
+	}
+
+	// 아이디 + 이메일로 회원 찾기 (탈퇴 회원은 제외, 없으면 null)
+	public MemberDTO selectActiveByLoginIdAndEmail(String loginId, String email) {
+		return mybatis.selectOne("member.selectActiveByLoginIdAndEmail",
+				Map.of("loginId", loginId, "email", email));
+	}
+
+	// 가장 최근 인증번호가 지금도 쓸 수 있는지 (1이면 통과, 0이면 실패)
+	public int countValidAuth(String email, String purpose, String code) {
+		return mybatis.selectOne("member.countValidAuth",
+				Map.of("email", email, "purpose", purpose, "code", code));
+	}
+
+	// 가장 최근 인증번호를 '사용함'(IS_USED = 'Y')으로 바꾸기
+	public int updateAuthUsed(String email, String purpose) {
+		return mybatis.update("member.updateAuthUsed",
+				Map.of("email", email, "purpose", purpose));
+	}
+
+	// 틀렸을 때 가장 최근 인증번호의 틀린 횟수 +1
+	public int increaseAuthFail(String email, String purpose) {
+		return mybatis.update("member.increaseAuthFail",
+				Map.of("email", email, "purpose", purpose));
+	}
+
+	// 비밀번호 바꾸기 (encodedPw = BCrypt 로 바꾼 값)
+	public int updatePassword(int memberId, String encodedPw) {
+		return mybatis.update("member.updatePassword",
+				Map.of("memberId", memberId, "password", encodedPw));
+	}
 }

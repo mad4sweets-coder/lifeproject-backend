@@ -1,18 +1,30 @@
 package com.example.demo.member;
 
+import java.security.SecureRandom;
+
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import jakarta.mail.internet.MimeMessage;
 
 // 실제 일(검사, 암호화, 저장)을 하는 곳
 @Service
 public class MemberService {
 
 	private MemberDAO dao;
+	private JavaMailSender mailSender; // 메일 보내는 도구 (M09)
+	private String mailFrom;           // 보내는 사람 = Gmail 주소 (spring.mail.username)
 	private BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
 
-	public MemberService(MemberDAO dao) {
+	public MemberService(MemberDAO dao, JavaMailSender mailSender,
+			@Value("${spring.mail.username}") String mailFrom) {
 		this.dao = dao;
+		this.mailSender = mailSender;
+		this.mailFrom = mailFrom;
 	}
 
 	// ===== 중복 확인 (true = 사용 가능) =====
@@ -163,5 +175,155 @@ public class MemberService {
 		if (password == null || !encoder.matches(password, me.getPassword())) return false;
 
 		return dao.updateWithdrawn(memberId) > 0;
+	}
+
+	// ===== 인증번호 보내기 (M09) =====
+	// 문제가 있으면 오류 문구를, 성공하면 null 을 돌려준다
+	// ※ 가입된 이메일이든 아니든 겉으로는 똑같이 "성공"처럼 보이게 함 (가입 여부를 알 수 없게)
+	public String sendCode(MemberFindDTO dto) {
+
+		// 1. 입력 검사
+		String purpose = dto.getPurpose();
+		if (!"FIND_ID".equals(purpose) && !"RESET_PW".equals(purpose)) {
+			return "잘못된 요청입니다.";
+		}
+		if (dto.getEmail() == null || !dto.getEmail().matches("^[\\w.+-]+@[\\w-]+\\.[\\w.]+$")) {
+			return "이메일 형식이 올바르지 않습니다.";
+		}
+		if ("RESET_PW".equals(purpose) && (dto.getLoginId() == null || dto.getLoginId().isBlank())) {
+			return "아이디를 입력해 주세요.";
+		}
+
+		// 2. 재발송은 1분 뒤부터 (EMAIL_AUTH 에 1분 안에 만든 번호가 있으면 막기)
+		if (dao.countRecentAuth(dto.getEmail(), purpose) > 0) {
+			return "인증번호는 1분 뒤에 다시 받을 수 있어요.";
+		}
+
+		// 3. 6자리 랜덤 숫자 만들기 (000123 처럼 앞이 0이어도 6자리)
+		String code = String.format("%06d", new SecureRandom().nextInt(1000000));
+
+		// 4. DB 에 저장 (유효시간 5분)
+		//    회원이 없어도 저장함 → 1분 제한이 똑같이 걸려서 "가입된 이메일인지" 알 수 없음
+		dao.insertEmailAuth(dto.getEmail(), code, purpose);
+
+		// 5. 일치하는 회원이 있을 때만 메일 발송
+		MemberDTO member = "FIND_ID".equals(purpose)
+				? dao.selectActiveByEmail(dto.getEmail())
+				: dao.selectActiveByLoginIdAndEmail(dto.getLoginId(), dto.getEmail());
+
+		if (member != null) {
+			try {
+				// HTML 메일 (밤하늘 카드 + 금색 인증번호)
+				MimeMessage mail = mailSender.createMimeMessage();
+				MimeMessageHelper helper = new MimeMessageHelper(mail, "UTF-8");
+				helper.setFrom(mailFrom);
+				helper.setTo(dto.getEmail());
+				helper.setSubject("[환승인생] 인증번호 안내");
+				helper.setText(makeMailHtml(code, purpose), true); // true = HTML 로 보내기
+				mailSender.send(mail);
+			} catch (Exception e) {
+				// 메일이 안 나가도 화면에는 똑같은 문구를 보여 줌 (가입 여부 노출 방지)
+				// 원인은 STS 콘솔에서 확인 (앱 비밀번호가 틀렸는지 등)
+				e.printStackTrace();
+			}
+		}
+		return null; // 성공
+	}
+
+	// ===== 인증번호 확인 (아이디 찾기·비밀번호 재설정이 같이 씀) =====
+	// 맞으면 true (그 번호는 '사용함'으로 바꿈), 틀리면 false (틀린 횟수 +1)
+	private boolean verifyCode(String email, String purpose, String code) {
+		if (email == null || code == null) return false;
+
+		// 가장 최근 번호가 [같은 번호 · 안 씀 · 5분 안 지남 · 틀린 횟수 5번 미만] 이면 통과
+		if (dao.countValidAuth(email, purpose, code) > 0) {
+			dao.updateAuthUsed(email, purpose);
+			return true;
+		}
+		dao.increaseAuthFail(email, purpose); // 5번 틀리면 이 번호는 더 이상 못 씀
+		return false;
+	}
+
+	// ===== 아이디 찾기 (M09) =====
+	// 인증번호가 맞으면 일부 가린 아이디(msj***)를, 틀리면 null 을 돌려준다
+	@Transactional
+	public String findId(String email, String code) {
+		if (!verifyCode(email, "FIND_ID", code)) return null;
+
+		MemberDTO member = dao.selectActiveByEmail(email);
+		if (member == null) return null;
+
+		// 앞 3글자만 보여 주고 나머지는 *** (아이디는 4자 이상이라 안전)
+		return member.getLoginId().substring(0, 3) + "***";
+	}
+
+	// ===== 비밀번호 재설정 (M09) =====
+	// 문제가 있으면 오류 문구를, 성공하면 null 을 돌려준다
+	@Transactional // 번호를 '사용함'으로 바꾸는 것과 비밀번호 저장 중 하나라도 실패하면 둘 다 취소
+	public String resetPassword(MemberFindDTO dto) {
+
+		// 1. 새 비밀번호 검사 (먼저 검사해야 형식 실수로 인증번호가 헛되이 쓰이지 않음)
+		String newPw = dto.getNewPassword();
+		if (newPw == null || !newPw.matches("^(?=.*[a-zA-Z])(?=.*[0-9])(?=.*[^a-zA-Z0-9]).{8,20}$")) {
+			return "비밀번호는 영문·숫자·특수문자를 포함해 8~20자로 입력해 주세요.";
+		}
+		if (!newPw.equals(dto.getNewPasswordCheck())) {
+			return "비밀번호 확인이 일치하지 않습니다.";
+		}
+
+		// 2. 인증번호를 서버에서 다시 확인 (이메일 + 인증번호를 함께 받음)
+		String fail = "인증번호가 올바르지 않거나 만료되었습니다.";
+		if (!verifyCode(dto.getEmail(), "RESET_PW", dto.getCode())) return fail;
+
+		// 3. 아이디와 이메일이 맞는 회원 찾기
+		MemberDTO member = dao.selectActiveByLoginIdAndEmail(dto.getLoginId(), dto.getEmail());
+		if (member == null) return fail;
+
+		// 4. BCrypt 로 바꿔서 저장 (원래 비밀번호는 복원할 수 없음)
+		dao.updatePassword(member.getMemberId(), encoder.encode(newPw));
+		return null; // 성공
+	}
+
+	// ===== 인증번호 메일 HTML 만들기 (M09) =====
+	// 메일 프로그램(Gmail·네이버)은 CSS 변수·<style>·flex 를 잘 못 읽어서
+	// <table> + style="..." 로 만들고, 색도 design.css 값(#0a0f22, #f2d58c …)을 직접 씀
+	private String makeMailHtml(String code, String purpose) {
+		String title = "FIND_ID".equals(purpose) ? "아이디 찾기" : "비밀번호 찾기";
+
+		// 123456 → "1 2 3 4 5 6" 처럼 띄워서 읽기 쉽게
+		String spaced = String.join(" ", code.split(""));
+
+		return """
+			<div style="margin:0; padding:32px 0; background:#070b1a;">
+			  <table role="presentation" width="100%%" cellpadding="0" cellspacing="0">
+			    <tr><td align="center">
+			      <table role="presentation" width="420" cellpadding="0" cellspacing="0"
+			             style="background:#0f1530; border:1px solid #2b3459; border-radius:16px;
+			                    font-family:'Malgun Gothic','Apple SD Gothic Neo',sans-serif;">
+			        <tr><td style="padding:28px 32px 0; color:#f2d58c; font-size:18px; font-weight:700;">
+			          &#9733; 환승인생
+			        </td></tr>
+			        <tr><td style="padding:20px 32px 0; color:#e8e9f5; font-size:20px; font-weight:700;">
+			          %s 인증번호를 알려 드려요
+			        </td></tr>
+			        <tr><td style="padding:8px 32px 0; color:#a3a8cc; font-size:14px; line-height:1.6;">
+			          아래 6자리를 화면에 입력해 주세요.
+			        </td></tr>
+			        <tr><td align="center" style="padding:24px 32px;">
+			          <div style="display:inline-block; padding:16px 28px; background:#141b3a;
+			                      border:1px solid #d9b25f; border-radius:12px;
+			                      color:#f2d58c; font-size:32px; font-weight:700; letter-spacing:6px;">
+			            %s
+			          </div>
+			        </td></tr>
+			        <tr><td style="padding:0 32px 28px; color:#7d83ab; font-size:12px; line-height:1.7;">
+			          이 번호는 <b style="color:#e8e9f5;">5분 동안</b>만 쓸 수 있어요.<br>
+			          본인이 요청하지 않았다면 이 메일은 무시해 주세요.
+			        </td></tr>
+			      </table>
+			    </td></tr>
+			  </table>
+			</div>
+			""".formatted(title, spaced);
 	}
 }
