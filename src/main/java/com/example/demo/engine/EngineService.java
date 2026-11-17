@@ -8,6 +8,7 @@ import java.util.UUID;
 
 import org.springframework.stereotype.Service;
 
+import com.example.demo.event.EventDAO;
 import com.example.demo.event.EventService;
 import com.example.demo.event.dto.EventResultDTO;
 
@@ -16,11 +17,13 @@ public class EngineService {
 
 	private final EngineDao engineDao;
 	private final EventService eventService; // C09·C10 이벤트 (장윤아님)
+	private final EventDAO eventDao; // 선택지 다시 불러오기용 (장윤아님, 읽기만)
 
-	// 생성자 주입: 스프링이 객체를 만들 때 EngineDao, EventService를 넣어줌
-	public EngineService(EngineDao engineDao, EventService eventService) {
+	// 생성자 주입: 스프링이 객체를 만들 때 EngineDao, EventService, EventDAO를 넣어줌
+	public EngineService(EngineDao engineDao, EventService eventService, EventDAO eventDao) {
 		this.engineDao = engineDao;
 		this.eventService = eventService;
+		this.eventDao = eventDao;
 	}
 
 	private Random random = new Random();
@@ -41,8 +44,8 @@ public class EngineService {
 		engineDao.moveOldGuestStats();
 		engineDao.deleteOldGuestLives();
 
-		// ① 출생 연도: 고른 연대 안에서 랜덤 (1945년 이전 X, 현재 연도 이후 X)
-		int minYear = Math.max(decade, 1945);
+		// ① 출생 연도: 고른 연대 안에서 랜덤 (1940년대 ~ 현재, 현재 연도 이후 X)
+		int minYear = decade;
 		int maxYear = Math.min(decade + 9, LocalDate.now().getYear());
 		if (minYear > maxYear) {
 			return null; // 고를 수 없는 연대
@@ -165,6 +168,7 @@ public class EngineService {
 			life.setNeedFocus(true);
 			life.setFocusOptions(focusOptions(life.getStageCode(), life));
 		}
+		restoreChoice(life); // 선택 이벤트를 아직 안 골랐으면 선택 창 다시 띄우기
 		return life;
 	}
 
@@ -789,46 +793,119 @@ public class EngineService {
 	// ================= C09 이벤트 반영 =================
 
 	// 올해 일어난 이벤트(윤아님 EventService.rollYear)를 인생에 반영
-	// (선택 이벤트는 rollYear에서 빠짐 → 윤아님 5단계에서 처리)
+	// 선택 이벤트(한 해 최대 1개)는 바로 반영하지 않고 선택을 기다림 → chooseEvent
 	private void eventStep(LifeDTO life) {
 		List<EventResultDTO> events = eventService.rollYear(life);
 
 		for (EventResultDTO e : events) {
-			// 1. 능력치 변화 (C05)
-			life.setHealth(life.getHealth() + e.getEffHealth());
-			life.setHappiness(life.getHappiness() + e.getEffHappiness());
-			life.setKnowledge(life.getKnowledge() + e.getEffKnowledge());
-			life.setRelation(life.getRelation() + e.getEffRelation());
-
-			// 2. 소득 배율 변화 (C06): 일하는 중일 때만, 0.1 = +10%
-			if (e.getEffIncomeRate() != 0 && "EMPLOYED".equals(life.getJobStatus()) && life.getIncomeRate() != null) {
-				life.setIncomeRate(life.getIncomeRate() * (1 + e.getEffIncomeRate()));
+			if (e.isChoice()) {
+				// 상황 문장만 기록하고, 효과는 고른 선택지로 (PENDING_EVENT_ID에 저장)
+				life.setPendingEventId(e.getEventId());
+				life.setNeedChoice(true);
+				life.setPendingEvent(e);
+				saveEventLog(life, life.getCurrentAge(), e.getEventId(), null, e.getLogText());
+				continue;
 			}
-
-			// 3. 재산 변화율 (C06): 재산 × 비율 (0.3 = +30%, -0.5 = -50%)
-			//    재산이 0 이하(빚)면 변화 없음 → 빚이 있을 때 투자 손실로 빚이 줄어드는 일 방지
-			if (e.getEffWealthRate() != 0 && life.getAssets() > 0) {
-				life.setAssets(life.getAssets() + Math.round(life.getAssets() * e.getEffWealthRate()));
-			}
-
-			// 4. 상태 변경 (결혼·자녀·부모 사망·실직·조기 은퇴·이민)
-			applyAction(life, e.getResultAction(), e.getMigrateTo());
-
-			// 5. 경험 기록: 윤아님 pickEvent의 '한 번만'·'필요 경험'·'제외 경험' 판정에 쓰임
-			addExperience(life, e.getEventId());
-
-			// 6. 인생 기록 문장 저장 (C03 기록 화면, C11 AI 서술 대상 표시)
-			EventLogDTO log = new EventLogDTO();
-			log.setLifeId(life.getLifeId());
-			log.setAge(life.getCurrentAge());
-			log.setYearNo(life.getBirthYear() + life.getCurrentAge());
-			log.setEventId(e.getEventId());
-			log.setLogText(e.getLogText());
-			engineDao.insertEventLog(log);
+			applyEvent(life, e, life.getCurrentAge(), null);
 		}
 
 		fixStats(life);
 		life.setEvents(events); // [화면용] 올해 일어난 일
+	}
+
+	// 이벤트 결과 하나를 인생에 반영 (일반 이벤트, 고른 선택지 공통)
+	// age: 이벤트가 일어난 나이, choiceId: 선택지 번호 (일반 이벤트는 null)
+	private void applyEvent(LifeDTO life, EventResultDTO e, int age, Integer choiceId) {
+		// 1. 능력치 변화 (C05)
+		life.setHealth(life.getHealth() + e.getEffHealth());
+		life.setHappiness(life.getHappiness() + e.getEffHappiness());
+		life.setKnowledge(life.getKnowledge() + e.getEffKnowledge());
+		life.setRelation(life.getRelation() + e.getEffRelation());
+
+		// 2. 소득 배율 변화 (C06): 일하는 중일 때만, 0.1 = +10%
+		if (e.getEffIncomeRate() != 0 && "EMPLOYED".equals(life.getJobStatus()) && life.getIncomeRate() != null) {
+			life.setIncomeRate(life.getIncomeRate() * (1 + e.getEffIncomeRate()));
+		}
+
+		// 3. 재산 변화율 (C06 재산 반영): 재산 × 비율 (0.3 = +30%, -0.5 = -50%)
+		//    재산이 0 이하(빚)면 변화 없음 → 빚이 있을 때 손실로 빚이 줄어드는 일 방지
+		if (e.getEffWealthRate() != 0 && life.getAssets() > 0) {
+			life.setAssets(life.getAssets() + Math.round(life.getAssets() * e.getEffWealthRate()));
+		}
+
+		// 4. 상태 변경 (결혼·자녀·부모 사망·실직·조기 은퇴·이민)
+		applyAction(life, e.getResultAction(), e.getMigrateTo());
+
+		// 5. 경험 기록: 윤아님 pickEvent의 '한 번만'·'필요 경험'·'제외 경험' 판정에 쓰임
+		//    (선택지는 이벤트ID_순서, 예: LE_MIGRATE_WORK_1)
+		String expId = e.getExpId() != null ? e.getExpId() : e.getEventId();
+		ExperienceDTO exp = new ExperienceDTO();
+		exp.setLifeId(life.getLifeId());
+		exp.setExpId(expId);
+		exp.setAge(age);
+		exp.setYearNo(life.getBirthYear() + age);
+		engineDao.insertExperience(exp);
+
+		// 6. 인생 기록 문장 저장 (C03 기록 화면, C11 AI 서술 대상 표시)
+		saveEventLog(life, age, e.getEventId(), choiceId, e.getLogText());
+	}
+
+	// LIFE_EVENT_LOG 한 줄 저장
+	private void saveEventLog(LifeDTO life, int age, String eventId, Integer choiceId, String text) {
+		EventLogDTO log = new EventLogDTO();
+		log.setLifeId(life.getLifeId());
+		log.setAge(age);
+		log.setYearNo(life.getBirthYear() + age);
+		log.setEventId(eventId);
+		log.setChoiceId(choiceId);
+		log.setLogText(text);
+		engineDao.insertEventLog(log);
+	}
+
+	// ================= C09 선택 이벤트: 선택지 고르기 =================
+	// 선택 이벤트는 작년(나이+1 하기 전)에 일어났으므로 그 나이로 기록
+	public LifeDTO chooseEvent(int lifeId, int choiceId) {
+		LifeDTO life = engineDao.selectLife(lifeId);
+		if (life == null || !life.getStatus().equals("PLAYING") || life.getPendingEventId() == null) {
+			return null; // 고를 선택이 없음
+		}
+		int age = life.getCurrentAge() - 1;
+
+		EventResultDTO r = eventService.applyChoice(life, choiceId, age);
+		if (r == null || !life.getPendingEventId().equals(r.getEventId())) {
+			return null; // 없는 선택지이거나 지금 이벤트의 선택지가 아님
+		}
+
+		applyEvent(life, r, age, choiceId);
+		fixStats(life);
+		life.setPendingEventId(null);
+
+		List<EventResultDTO> list = new ArrayList<>();
+		list.add(r);
+		life.setEvents(list); // [화면용] 고른 결과
+
+		engineDao.updateLifeYear(life);
+		return life;
+	}
+
+	// 선택을 기다리는 중인지 (다음 해로 못 넘어감)
+	public boolean isWaitingChoice(int lifeId) {
+		LifeDTO life = engineDao.selectLife(lifeId);
+		return life != null && life.getPendingEventId() != null;
+	}
+
+	// 이어하기·새로고침 때 선택 창 다시 띄우기
+	private void restoreChoice(LifeDTO life) {
+		if (life == null || life.getPendingEventId() == null) {
+			return;
+		}
+		EventResultDTO e = new EventResultDTO();
+		e.setEventId(life.getPendingEventId());
+		e.setChoice(true);
+		e.setLogText(engineDao.selectPendingText(life));
+		e.setChoices(eventDao.selectChoices(life.getPendingEventId())); // 윤아님 DAO (읽기만)
+		life.setNeedChoice(true);
+		life.setPendingEvent(e);
 	}
 
 	// 이벤트 결과의 상태 변경 처리 (RESULT_ACTION)

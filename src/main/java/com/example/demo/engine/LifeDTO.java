@@ -54,6 +54,9 @@ public class LifeDTO {
 	private Double infantMortality;	// [화면용] 영아사망률
 	private Double gdpPerCapita;	// [화면용] 1인당 GDP
 	private List<EventResultDTO> events;	// [화면용] 올해 일어난 일 (C09)
+	private String pendingEventId;	// 고르기를 기다리는 선택 이벤트 (C09, PENDING_EVENT_ID)
+	private boolean needChoice;	// [화면용] 선택 이벤트 창 띄우기 (C09)
+	private EventResultDTO pendingEvent;	// [화면용] 선택 이벤트 문장 + 선택지 (C09)
 
 	public int getLifeId() {
 		return lifeId;
@@ -446,5 +449,29 @@ public class LifeDTO {
 
 	public void setEvents(List<EventResultDTO> events) {
 		this.events = events;
+	}
+
+	public String getPendingEventId() {
+		return pendingEventId;
+	}
+
+	public void setPendingEventId(String pendingEventId) {
+		this.pendingEventId = pendingEventId;
+	}
+
+	public boolean isNeedChoice() {
+		return needChoice;
+	}
+
+	public void setNeedChoice(boolean needChoice) {
+		this.needChoice = needChoice;
+	}
+
+	public EventResultDTO getPendingEvent() {
+		return pendingEvent;
+	}
+
+	public void setPendingEvent(EventResultDTO pendingEvent) {
+		this.pendingEvent = pendingEvent;
 	}
 }
