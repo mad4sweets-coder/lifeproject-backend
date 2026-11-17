@@ -6,6 +6,8 @@ import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestAttribute;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -84,5 +86,51 @@ public class MemberController {
 				"nickname", member.getNickname(),
 				"memberRole", member.getMemberRole(),
 				"guestConverted", converted));
+	}
+
+	// 마이페이지 (M04)  GET /api/members/me
+	// 로그인한 회원만 들어옴 → LoginValidator 가 토큰에서 꺼낸 회원 번호를 "memberId" 로 담아 줌
+	// 돌려주는 JSON: { loginId, nickname, email, joinDate, point, lifeCount, questDone,
+	//                lifeId, lifeName, countryName, currentAge }  (진행 중인 인생 없으면 lifeId 는 null)
+	@GetMapping("/me")
+	public ResponseEntity<?> myPage(@RequestAttribute("memberId") String memberId) {
+		MyPageDTO my = service.myPage(Integer.parseInt(memberId));
+
+		// 토큰은 맞는데 회원이 없거나 탈퇴한 경우
+		if (my == null) {
+			return ResponseEntity.status(404).body(Map.of("message", "회원 정보를 찾을 수 없습니다."));
+		}
+		return ResponseEntity.ok(my);
+	}
+
+	// 개인정보 수정 (M05)  PUT /api/members/me
+	// 보내는 JSON: { nickname, email, currentPassword, newPassword, newPasswordCheck }
+	// (새 비밀번호는 비워 두면 안 바뀜)
+	@PutMapping("/me")
+	public ResponseEntity<?> update(@RequestAttribute("memberId") String memberId,
+			@RequestBody MemberUpdateDTO dto) {
+		try {
+			String error = service.update(Integer.parseInt(memberId), dto);
+			if (error != null) {
+				return ResponseEntity.badRequest().body(Map.of("message", error)); // 400
+			}
+			// 헤더에 보이는 닉네임을 바꿀 수 있게 새 닉네임을 돌려줌
+			return ResponseEntity.ok(Map.of("message", "저장했습니다.", "nickname", dto.getNickname()));
+		} catch (DuplicateKeyException e) {
+			// 거의 동시에 같은 닉네임·이메일로 바꾼 경우 → DB UNIQUE 제약이 막아 줌
+			return ResponseEntity.status(409).body(Map.of("message", "이미 사용 중인 닉네임 또는 이메일입니다."));
+		}
+	}
+
+	// 회원 탈퇴 (M06)  POST /api/members/me/withdraw
+	// 보내는 JSON: { currentPassword }
+	@PostMapping("/me/withdraw")
+	public ResponseEntity<?> withdraw(@RequestAttribute("memberId") String memberId,
+			@RequestBody MemberUpdateDTO dto) {
+		boolean ok = service.withdraw(Integer.parseInt(memberId), dto.getCurrentPassword());
+		if (!ok) {
+			return ResponseEntity.badRequest().body(Map.of("message", "비밀번호가 올바르지 않습니다."));
+		}
+		return ResponseEntity.ok(Map.of("message", "탈퇴했습니다."));
 	}
 }
