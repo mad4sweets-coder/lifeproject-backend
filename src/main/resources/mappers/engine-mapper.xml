@@ -238,7 +238,7 @@
 
 	<!-- ================= C07 사망 판정 ================= -->
 
-	<!-- 그해(출생 연도 + 나이) 사는 나라의 통계 (그 연대가 없으면 가장 가까운 연대) -->
+	<!-- 그해(출생 연도 + 나이) 사는 나라의 통계: 그해의 연대(1966 → 1960) 데이터, 없으면 가장 가까운 연대 -->
 	<select id="selectYearStat" parameterType="com.example.demo.engine.LifeDTO"
 		resultType="com.example.demo.engine.CountryStatDTO">
 		SELECT * FROM (
@@ -251,7 +251,7 @@
 			FROM COUNTRY_STAT s
 			JOIN COUNTRY c ON s.COUNTRY_CODE = c.COUNTRY_CODE
 			WHERE s.COUNTRY_CODE = #{currentCountry}
-			ORDER BY ABS(s.DECADE - (#{birthYear} + #{currentAge}))
+			ORDER BY ABS(s.DECADE - TRUNC((#{birthYear} + #{currentAge}) / 10) * 10)
 		)
 		WHERE ROWNUM = 1
 	</select>
@@ -321,7 +321,7 @@
 			FROM REGION_STAT r
 			JOIN COUNTRY c ON r.REGION_CODE = c.REGION_CODE
 			WHERE c.COUNTRY_CODE = #{currentCountry}
-			ORDER BY ABS(r.DECADE - (#{birthYear} + #{currentAge}))
+			ORDER BY ABS(r.DECADE - TRUNC((#{birthYear} + #{currentAge}) / 10) * 10)
 		)
 		WHERE ROWNUM = 1
 	</select>
@@ -365,7 +365,7 @@
 				JOIN COUNTRY c2 ON d2.REGION_CODE = c2.REGION_CODE
 				WHERE c2.COUNTRY_CODE = #{countryCode}
 				  AND d2.AGE_GROUP = #{ageGroup}
-				ORDER BY ABS(d2.DECADE - #{yearNo})
+				ORDER BY ABS(d2.DECADE - TRUNC(#{yearNo} / 10) * 10)
 			)
 			WHERE ROWNUM = 1
 		  )
@@ -392,7 +392,7 @@
 		  AND s.DECADE = (
 			SELECT DECADE FROM (
 				SELECT DECADE FROM COUNTRY_STAT
-				ORDER BY ABS(DECADE - (#{birthYear} + #{currentAge}))
+				ORDER BY ABS(DECADE - TRUNC((#{birthYear} + #{currentAge}) / 10) * 10)
 			)
 			WHERE ROWNUM = 1
 		  )
