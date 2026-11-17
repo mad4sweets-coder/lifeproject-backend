@@ -62,6 +62,16 @@ public class MemberService {
 		if (dto.getEmail() == null || !dto.getEmail().matches("^[\\w.+-]+@[\\w-]+\\.[\\w.]+$")) {
 			return "이메일 형식이 올바르지 않습니다.";
 		}
+		// 전화번호: 010-1234-5678 처럼 와도 숫자만 남겨서 검사·저장
+		String phone = dto.getPhone() == null ? "" : dto.getPhone().replaceAll("[^0-9]", "");
+		if (!phone.matches("^01[0-9]{8,9}$")) {
+			return "전화번호를 올바르게 입력해 주세요. (예: 010-1234-5678)";
+		}
+		dto.setPhone(phone);
+		// 개인정보 활용 동의는 필수
+		if (!"Y".equals(dto.getPrivacyAgreed())) {
+			return "개인정보 수집·이용에 동의해 주세요.";
+		}
 
 		// 2. 중복 검사
 		if (!isLoginIdAvailable(dto.getLoginId())) return "이미 사용 중인 아이디입니다.";
