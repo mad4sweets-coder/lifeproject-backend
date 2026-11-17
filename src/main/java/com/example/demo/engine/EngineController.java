@@ -94,8 +94,8 @@ public class EngineController {
 		}
 		life = engineService.nextYear(life);
 		if (life == null) {
-			return ResponseEntity.badRequest()
-					.body("이미 끝난 인생이에요.");
+			return ResponseEntity.status(409)
+					.body("이미 끝났거나 방금 진행된 해예요. 새로고침해 주세요.");
 		}
 		return ResponseEntity.ok(life);
 	}

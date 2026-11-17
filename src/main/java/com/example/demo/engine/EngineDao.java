@@ -38,6 +38,10 @@ public interface EngineDao {
 	// C05 경험
 	int insertExperience(ExperienceDTO exp);
 
+	// 동시에 같은 해를 두 번 진행·같은 선택을 두 번 반영하지 않게 잠금 (0이면 이미 처리됨)
+	int lockLifeYear(LifeDTO life);
+	int lockPending(LifeDTO life);
+
 	// C10 → C06 역사 사건 보정값 (실직·학업 중단·피란)
 	HistEffectDTO selectHistEffect(String eventId);
 

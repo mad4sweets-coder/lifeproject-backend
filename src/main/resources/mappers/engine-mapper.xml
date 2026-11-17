@@ -282,10 +282,26 @@
 
 	<!-- ================= C05 경험 ================= -->
 
+	<!-- 같은 나이에 같은 경험이 이미 있으면 넣지 않음 (기본키 LIFE_ID+EXP_ID+AGE 중복 에러 방지) -->
 	<insert id="insertExperience" parameterType="com.example.demo.engine.ExperienceDTO">
 		INSERT INTO LIFE_EXPERIENCE (LIFE_ID, EXP_ID, AGE, YEAR_NO)
-		VALUES (#{lifeId}, #{expId}, #{age}, #{yearNo})
+		SELECT #{lifeId}, #{expId}, #{age}, #{yearNo} FROM dual
+		WHERE NOT EXISTS (SELECT 1 FROM LIFE_EXPERIENCE
+		                  WHERE LIFE_ID = #{lifeId} AND EXP_ID = #{expId} AND AGE = #{age})
 	</insert>
+
+	<!-- 한 해 진행 잠금: 아직 그 나이·진행 중일 때만 1줄 (트랜잭션 끝날 때까지 다른 요청은 기다림) -->
+	<update id="lockLifeYear" parameterType="com.example.demo.engine.LifeDTO">
+		UPDATE LIFE SET CURRENT_AGE = CURRENT_AGE
+		WHERE LIFE_ID = #{lifeId} AND CURRENT_AGE = #{currentAge} AND STATUS = 'PLAYING'
+		  AND PENDING_EVENT_ID IS NULL
+	</update>
+
+	<!-- 선택 이벤트 잠금: 아직 그 이벤트를 기다리는 중일 때만 1줄 -->
+	<update id="lockPending" parameterType="com.example.demo.engine.LifeDTO">
+		UPDATE LIFE SET PENDING_EVENT_ID = PENDING_EVENT_ID
+		WHERE LIFE_ID = #{lifeId} AND PENDING_EVENT_ID = #{pendingEventId} AND STATUS = 'PLAYING'
+	</update>
 
 	<!-- C10 → C06: 역사 사건의 강도와 유형별 실직·학업 중단·피란 확률 -->
 	<select id="selectHistEffect" parameterType="string" resultType="com.example.demo.engine.HistEffectDTO">
