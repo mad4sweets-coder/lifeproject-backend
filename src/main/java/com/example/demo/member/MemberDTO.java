@@ -16,6 +16,8 @@ public class MemberDTO {
 	private int point;           // POINT
 	private String status;       // STATUS     ACTIVE / WITHDRAWN
 	private Date joinDate;       // JOIN_DATE
+	private String phone;        // PHONE      전화번호 (숫자만 저장, v31)
+	private String privacyAgreed;// PRIVACY_AGREED 개인정보 활용 동의 Y / N (v31)
 
 	public int getMemberId() { return memberId; }
 	public void setMemberId(int memberId) { this.memberId = memberId; }
@@ -46,4 +48,10 @@ public class MemberDTO {
 
 	public Date getJoinDate() { return joinDate; }
 	public void setJoinDate(Date joinDate) { this.joinDate = joinDate; }
+
+	public String getPhone() { return phone; }
+	public void setPhone(String phone) { this.phone = phone; }
+
+	public String getPrivacyAgreed() { return privacyAgreed; }
+	public void setPrivacyAgreed(String privacyAgreed) { this.privacyAgreed = privacyAgreed; }
 }

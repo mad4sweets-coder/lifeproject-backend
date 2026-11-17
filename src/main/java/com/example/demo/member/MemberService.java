@@ -62,6 +62,16 @@ public class MemberService {
 		if (dto.getEmail() == null || !dto.getEmail().matches("^[\\w.+-]+@[\\w-]+\\.[\\w.]+$")) {
 			return "이메일 형식이 올바르지 않습니다.";
 		}
+		// 전화번호: 010-1234-5678 처럼 와도 숫자만 남겨서 검사·저장
+		String phone = dto.getPhone() == null ? "" : dto.getPhone().replaceAll("[^0-9]", "");
+		if (!phone.matches("^01[0-9]{8,9}$")) {
+			return "전화번호를 올바르게 입력해 주세요. (예: 010-1234-5678)";
+		}
+		dto.setPhone(phone);
+		// 개인정보 활용 동의는 필수
+		if (!"Y".equals(dto.getPrivacyAgreed())) {
+			return "개인정보 수집·이용에 동의해 주세요.";
+		}
 
 		// 2. 중복 검사
 		if (!isLoginIdAvailable(dto.getLoginId())) return "이미 사용 중인 아이디입니다.";
@@ -123,6 +133,7 @@ public class MemberService {
 
 	// ===== 개인정보 수정 (M05) =====
 	// 문제가 있으면 오류 문구를, 성공하면 null 을 돌려준다
+	@Transactional // 인증번호 '사용함' 처리와 회원 정보 저장을 한 번에 (하나라도 실패하면 둘 다 취소)
 	public String update(int memberId, MemberUpdateDTO dto) {
 
 		// 1. DB 에서 지금 내 정보 꺼내기 (비밀번호 비교용)
@@ -160,7 +171,14 @@ public class MemberService {
 			dto.setNewPassword(encoder.encode(newPw));
 		}
 
-		// 6. 저장 (아이디는 바꾸지 않음)
+		// 6. 이메일을 바꿨으면 새 이메일로 받은 인증번호 확인 (안 바꿨으면 건너뜀)
+		if (!dto.getEmail().equals(me.getEmail())) {
+			if (!verifyCode(dto.getEmail(), "CHANGE_EMAIL", dto.getEmailCode())) {
+				return "이메일 인증번호가 올바르지 않거나 만료되었습니다.";
+			}
+		}
+
+		// 7. 저장 (아이디는 바꾸지 않음)
 		dto.setMemberId(memberId);
 		dao.updateMember(dto);
 		return null; // 성공
@@ -213,14 +231,7 @@ public class MemberService {
 
 		if (member != null) {
 			try {
-				// HTML 메일 (밤하늘 카드 + 금색 인증번호)
-				MimeMessage mail = mailSender.createMimeMessage();
-				MimeMessageHelper helper = new MimeMessageHelper(mail, "UTF-8");
-				helper.setFrom(mailFrom);
-				helper.setTo(dto.getEmail());
-				helper.setSubject("[환승인생] 인증번호 안내");
-				helper.setText(makeMailHtml(code, purpose), true); // true = HTML 로 보내기
-				mailSender.send(mail);
+				sendCodeMail(dto.getEmail(), code, purpose);
 			} catch (Exception e) {
 				// 메일이 안 나가도 화면에는 똑같은 문구를 보여 줌 (가입 여부 노출 방지)
 				// 원인은 STS 콘솔에서 확인 (앱 비밀번호가 틀렸는지 등)
@@ -284,11 +295,62 @@ public class MemberService {
 		return null; // 성공
 	}
 
+	// ===== 이메일 변경 인증번호 보내기 (M05) =====
+	// 새 이메일로 6자리를 보냄. 문제가 있으면 오류 문구를, 성공하면 null 을 돌려준다
+	// (로그인한 본인만 쓰는 기능이라 오류를 그대로 알려 줘도 됨)
+	public String sendEmailChangeCode(int memberId, String newEmail) {
+
+		// 1. 형식 검사
+		if (newEmail == null || !newEmail.matches("^[\\w.+-]+@[\\w-]+\\.[\\w.]+$")) {
+			return "이메일 형식이 올바르지 않습니다.";
+		}
+
+		// 2. 지금 이메일과 같으면 인증할 필요 없음
+		MemberDTO me = dao.selectById(memberId);
+		if (me == null || "WITHDRAWN".equals(me.getStatus())) return "회원 정보를 찾을 수 없습니다.";
+		if (newEmail.equals(me.getEmail())) return "지금 쓰는 이메일이에요.";
+
+		// 3. 다른 회원이 쓰는 이메일이면 안 됨
+		if (dao.countEmailExceptMe(memberId, newEmail) > 0) return "이미 사용 중인 이메일입니다.";
+
+		// 4. 재발송은 1분 뒤부터
+		if (dao.countRecentAuth(newEmail, "CHANGE_EMAIL") > 0) {
+			return "인증번호는 1분 뒤에 다시 받을 수 있어요.";
+		}
+
+		// 5. 6자리 만들어 저장 (유효 5분) → 새 이메일로 발송
+		String code = String.format("%06d", new SecureRandom().nextInt(1000000));
+		dao.insertEmailAuth(newEmail, code, "CHANGE_EMAIL");
+		try {
+			sendCodeMail(newEmail, code, "CHANGE_EMAIL");
+		} catch (Exception e) {
+			e.printStackTrace();
+			return "메일을 보내지 못했습니다. 이메일 주소를 확인해 주세요.";
+		}
+		return null; // 성공
+	}
+
+	// ===== 인증번호 메일 보내기 (M05·M09 같이 씀) =====
+	// HTML 메일 (밤하늘 카드 + 금색 인증번호)
+	private void sendCodeMail(String to, String code, String purpose) throws Exception {
+		MimeMessage mail = mailSender.createMimeMessage();
+		MimeMessageHelper helper = new MimeMessageHelper(mail, "UTF-8");
+		helper.setFrom(mailFrom);
+		helper.setTo(to);
+		helper.setSubject("[환승인생] 인증번호 안내");
+		helper.setText(makeMailHtml(code, purpose), true); // true = HTML 로 보내기
+		mailSender.send(mail);
+	}
+
 	// ===== 인증번호 메일 HTML 만들기 (M09) =====
 	// 메일 프로그램(Gmail·네이버)은 CSS 변수·<style>·flex 를 잘 못 읽어서
 	// <table> + style="..." 로 만들고, 색도 design.css 값(#0a0f22, #f2d58c …)을 직접 씀
 	private String makeMailHtml(String code, String purpose) {
-		String title = "FIND_ID".equals(purpose) ? "아이디 찾기" : "비밀번호 찾기";
+		String title = switch (purpose) {
+			case "FIND_ID" -> "아이디 찾기";
+			case "RESET_PW" -> "비밀번호 찾기";
+			default -> "이메일 변경"; // CHANGE_EMAIL
+		};
 
 		// 123456 → "1 2 3 4 5 6" 처럼 띄워서 읽기 쉽게
 		String spaced = String.join(" ", code.split(""));

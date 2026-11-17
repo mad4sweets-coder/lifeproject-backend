@@ -10,6 +10,7 @@ public class MemberUpdateDTO {
 	private String currentPassword;  // 현재 비밀번호 (본인 확인용)
 	private String newPassword;      // 새 비밀번호 (비워 두면 안 바뀜)
 	private String newPasswordCheck; // 새 비밀번호 확인
+	private String emailCode;        // 이메일을 바꿀 때 새 이메일로 받은 인증번호 6자리
 
 	public int getMemberId() { return memberId; }
 	public void setMemberId(int memberId) { this.memberId = memberId; }
@@ -28,4 +29,7 @@ public class MemberUpdateDTO {
 
 	public String getNewPasswordCheck() { return newPasswordCheck; }
 	public void setNewPasswordCheck(String newPasswordCheck) { this.newPasswordCheck = newPasswordCheck; }
+
+	public String getEmailCode() { return emailCode; }
+	public void setEmailCode(String emailCode) { this.emailCode = emailCode; }
 }
