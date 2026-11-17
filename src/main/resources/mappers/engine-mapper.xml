@@ -282,18 +282,25 @@
 
 	<!-- ================= C05 경험 ================= -->
 
+	<!-- 같은 나이에 같은 경험이 이미 있으면 넣지 않음 (기본키 LIFE_ID+EXP_ID+AGE 중복 에러 방지) -->
 	<insert id="insertExperience" parameterType="com.example.demo.engine.ExperienceDTO">
 		INSERT INTO LIFE_EXPERIENCE (LIFE_ID, EXP_ID, AGE, YEAR_NO)
-		VALUES (#{lifeId}, #{expId}, #{age}, #{yearNo})
+		SELECT #{lifeId}, #{expId}, #{age}, #{yearNo} FROM dual
+		WHERE NOT EXISTS (SELECT 1 FROM LIFE_EXPERIENCE
+		                  WHERE LIFE_ID = #{lifeId} AND EXP_ID = #{expId} AND AGE = #{age})
 	</insert>
 
-	<!-- C03 비회원 → 회원 전환: 이 토큰의 진행 중 비회원 인생에 회원 번호 채우기 -->
-	<update id="claimGuestLife" parameterType="com.example.demo.engine.LifeDTO">
-		UPDATE LIFE
-		SET MEMBER_ID = #{memberId}
-		WHERE GUEST_TOKEN = #{guestToken}
-		  AND MEMBER_ID IS NULL
-		  AND STATUS = 'PLAYING'
+	<!-- 한 해 진행 잠금: 아직 그 나이·진행 중일 때만 1줄 (트랜잭션 끝날 때까지 다른 요청은 기다림) -->
+	<update id="lockLifeYear" parameterType="com.example.demo.engine.LifeDTO">
+		UPDATE LIFE SET CURRENT_AGE = CURRENT_AGE
+		WHERE LIFE_ID = #{lifeId} AND CURRENT_AGE = #{currentAge} AND STATUS = 'PLAYING'
+		  AND PENDING_EVENT_ID IS NULL
+	</update>
+
+	<!-- 선택 이벤트 잠금: 아직 그 이벤트를 기다리는 중일 때만 1줄 -->
+	<update id="lockPending" parameterType="com.example.demo.engine.LifeDTO">
+		UPDATE LIFE SET PENDING_EVENT_ID = PENDING_EVENT_ID
+		WHERE LIFE_ID = #{lifeId} AND PENDING_EVENT_ID = #{pendingEventId} AND STATUS = 'PLAYING'
 	</update>
 
 	<!-- C10 → C06: 역사 사건의 강도와 유형별 실직·학업 중단·피란 확률 -->
@@ -316,19 +323,15 @@
 		LEFT JOIN MEMBER_TRAIT M ON M.TRAIT_ID = T.TRAIT_ID AND M.MEMBER_ID = #{memberId, jdbcType=NUMERIC}
 	</insert>
 
-	<!-- C13: 이 인생의 학업 능력(STUDY) 레벨 효과값 (효과 표가 비어 있으면 결과 없음 → 효과 0) -->
+	<!-- C13: 이 인생의 학업 능력(STUDY) 효과값 = 타고난 재능 보너스 (효과 표에 값이 없으면 (레벨-1)×0.25) -->
 	<select id="selectStudyEffect" parameterType="int" resultType="double">
-		SELECT E.EFFECT_VALUE
+		SELECT NVL(E.EFFECT_VALUE, (L.TRAIT_LEVEL - 1) * 0.25)
 		FROM LIFE_TRAIT L
-		JOIN TRAIT_LEVEL_EFFECT E ON E.TRAIT_ID = L.TRAIT_ID AND E.LEVEL_NO = L.TRAIT_LEVEL
+		LEFT JOIN TRAIT_LEVEL_EFFECT E ON E.TRAIT_ID = L.TRAIT_ID AND E.LEVEL_NO = L.TRAIT_LEVEL
 		WHERE L.LIFE_ID = #{lifeId}
 		  AND L.TRAIT_ID = 'STUDY'
 	</select>
 
-	<!-- 상태 경험 지우기 (예: 이혼·사별하면 STATE_MARRIED 삭제, 나이 상관없이) -->
-	<delete id="deleteExperience" parameterType="com.example.demo.engine.ExperienceDTO">
-		DELETE FROM LIFE_EXPERIENCE WHERE LIFE_ID = #{lifeId} AND EXP_ID = #{expId}
-	</delete>
 
 	<!-- ================= C09 이벤트 기록 ================= -->
 

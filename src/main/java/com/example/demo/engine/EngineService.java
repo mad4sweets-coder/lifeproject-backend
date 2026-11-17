@@ -9,6 +9,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.example.demo.event.EventDAO;
 import com.example.demo.event.EventService;
@@ -60,7 +61,7 @@ public class EngineService {
 	}
 
 	// 나라 숫자 상수 (없으면 기본값): 0 남녀 기대수명 차이, 1 지니, 2 행복 점수, 3 5~14세 사망 비율
-	private double cNum(String cc, int i) {
+	private static double cNum(String cc, int i) {
 		double[] d = cc == null ? null : C_NUM.get(cc);
 		if (d != null) {
 			return d[i];
@@ -69,7 +70,7 @@ public class EngineService {
 		return def[i];
 	}
 
-	private double clamp(double v, double lo, double hi) {
+	private static double clamp(double v, double lo, double hi) {
 		return Math.max(lo, Math.min(hi, v));
 	}
 
@@ -212,7 +213,9 @@ public class EngineService {
 	// 타고난 학업 재능 (원작 tal("st")): 인생마다 정해진 값, 평균 0·표준편차 1
 	private double talent(LifeDTO life) {
 		// SplittableRandom: 번호가 이웃한 인생끼리도 재능이 고르게 퍼지게 (java.util.Random은 비슷한 씨앗끼리 첫 값이 닮음)
-		return new java.util.SplittableRandom(life.getLifeId() * 1000003L + 17).nextGaussian();
+		// C13 학업 능력 레벨은 원작의 '타고난 학업 재능'을 올려 주는 방식 (레벨당 +0.25 표준편차)
+		//   → 원작 공식 그대로 지식(또래 위치)이 오르고, 지식을 통해 진학·중퇴·대학원 합격이 좋아짐
+		return new java.util.SplittableRandom(life.getLifeId() * 1000003L + 17).nextGaussian() + studyEffect(life);
 	}
 
 	// 나이별 재능 반영 비중 (원작 talW)
@@ -242,12 +245,25 @@ public class EngineService {
 
 	// 원작 생명표 (lifeTable): 기대수명·영아/5세 미만 사망률에 맞춰 나이별 사망 확률 q를 만듦
 	// 5세 이상은 c + b·e^(f·나이), b는 기대수명이 맞을 때까지 50번 반씩 좁혀 찾음
-	private final Map<String, double[]> lifeTableCache = new ConcurrentHashMap<>();
+	private static final Map<String, double[]> lifeTableCache = new ConcurrentHashMap<>();
 
 	private double[] lifeTable(String cc, CountryStatDTO stat, String gender) {
 		double le = stat != null && stat.getLifeExpectancy() != null ? stat.getLifeExpectancy() : 70;
 		double im = stat != null && stat.getInfantMortality() != null ? stat.getInfantMortality() : 30;
-		double u5 = u5Of(stat);
+		return lifeTableOf(cc, le, im, u5Of(stat), gender);
+	}
+
+	// 다른 기능에서도 쓰는 "그 나라·시대·성별·나이의 기본 사망 확률" (원작 생명표, 건강·형편 배율 없이)
+	// 예: 윤아님 사별 이벤트 = 배우자(반대 성별, 같은 나이)의 올해 사망 확률
+	//   le 기대수명, im 영아사망률(‰), u5 5세 미만 사망률(‰, 없으면 영아사망률×1.35)
+	public static double baseDeathProb(String cc, Double le, Double im, Double u5, String gender, int age) {
+		double l = le == null ? 70 : le;
+		double i = im == null ? 30 : im;
+		double u = u5 != null ? u5 : i * 1.35;
+		return lifeTableOf(cc, l, i, u, gender)[(int) clamp(age, 0, 110)];
+	}
+
+	private static double[] lifeTableOf(String cc, double le, double im, double u5, String gender) {
 		String key = cc + gender + le + "/" + im + "/" + u5;
 		double[] cached = lifeTableCache.get(key);
 		if (cached != null) {
@@ -338,6 +354,8 @@ public class EngineService {
 
 	// ================= C02 랜덤 출생 =================
 	// memberId: 로그인한 회원 번호 (비회원이면 null)
+	// @Transactional: 인생·특성·0세 기록 저장 중 하나라도 실패하면 전부 취소 (반쪽짜리 인생이 남지 않게)
+	@Transactional
 	public LifeDTO birth(int decade, String oldGuestToken, Integer memberId) {
 
 		// 0. 진행 중이던 인생이 있으면 포기 처리 (회원 1명·토큰 1개당 진행 중 인생 1개)
@@ -460,27 +478,6 @@ public class EngineService {
 		life.setRegionCode(s == null ? null : s.getRegionCode());
 	}
 
-	// ================= C03 비회원 → 회원 전환 =================
-	// 비회원으로 진행하다 회원가입·로그인하면 그 인생에 회원 번호를 채움
-	// 이미 진행 중인 회원 인생이 있으면 전환하지 않음 (회원 1명당 진행 중 인생 1개)
-	// 반환: 전환 후 진행 중인 회원 인생 (전환할 게 없으면 null)
-	public LifeDTO claimGuestLife(Integer memberId, String guestToken) {
-		if (memberId == null || guestToken == null || guestToken.equals("")) {
-			return null;
-		}
-		LifeDTO mine = new LifeDTO();
-		mine.setMemberId(memberId);
-		if (engineDao.selectPlayingLife(mine) != null) {
-			return null; // 이미 진행 중인 회원 인생이 있음
-		}
-		LifeDTO cond = new LifeDTO();
-		cond.setMemberId(memberId);
-		cond.setGuestToken(guestToken);
-		if (engineDao.claimGuestLife(cond) == 0) {
-			return null; // 전환할 비회원 인생이 없음
-		}
-		return currentLife(memberId, null);
-	}
 
 	// ================= 본인 확인 =================
 
@@ -593,10 +590,18 @@ public class EngineService {
 
 	// ================= C03 1년 진행 =================
 	// life: 컨트롤러에서 loadMyLife로 불러온 인생
+	// @Transactional: 한 해 처리(능력치·이벤트·경험·기록 저장) 중 하나라도 실패하면 그해 전체를 취소
+	//   (예전엔 중간에 에러가 나면 경험만 저장되고 나이는 그대로라, 다음 진행 때 같은 경험이 또 들어가 막힐 수 있었음)
+	@Transactional
 	public LifeDTO nextYear(LifeDTO life) {
 
 		// 1. 끝난 인생이면 진행 안 함
 		if (!life.getStatus().equals("PLAYING")) {
+			return null;
+		}
+		// 같은 해를 두 번 진행하지 않게 이 인생 줄을 잠금 (버튼 연타·자동 진행이 겹쳐도 한 번만 진행)
+		//   먼저 온 요청이 끝날 때까지 기다렸다가, 나이가 이미 바뀌었으면 0줄 → 진행 안 함
+		if (engineDao.lockLifeYear(life) == 0) {
 			return null;
 		}
 
@@ -686,6 +691,7 @@ public class EngineService {
 	// ================= C04 나이대별 집중 선택 =================
 
 	// 집중 선택 저장 (그 나이대에서 고를 수 있는 것만)
+	@Transactional
 	public LifeDTO chooseFocus(LifeDTO life, String focusCode) {
 		if (!life.getStatus().equals("PLAYING") || life.getStageCode() == null) {
 			return null;
@@ -701,7 +707,8 @@ public class EngineService {
 
 	// ================= C06-2 직업 선택 =================
 
-	// 제안받은 직업 중 하나를 선택 (필요 학력을 갖춘 직업만)
+	// 제안받은 직업 중 하나를 선택 (올해 제안받은 3개 안에서만)
+	@Transactional
 	public LifeDTO chooseJob(LifeDTO life, String jobId) {
 		if (!life.getStatus().equals("PLAYING")) {
 			return null;
@@ -880,9 +887,6 @@ public class EngineService {
 			if (age > 72 && !"BRAIN".equals(focus)) {
 				d -= 0.02; // 두뇌 활동을 안 하면 노년에 감소
 			}
-			if (d > 0) {
-				d = d * (1 + studyEffect(life)); // C13 학업 능력: 지식 증가량 보정
-			}
 			kE = clamp(kE * (age < 25 ? 0.97 : 0.985) + d, -1.4, 1.6);
 		}
 		life.setKnowledge(clamp(100 * normCdf(talW(age) * tal + kE), 0.5, 99.9));
@@ -1051,7 +1055,6 @@ public class EngineService {
 			d = d * ("Y".equals(life.getIsUrban()) ? 1.4 : 0.75);
 		}
 		String g = groupOf(life.getCurrentCountry(), stat);
-		d = d * (1 + studyEffect(life)); // C13 학업 능력: 진학 승산 보정
 		double uniK = d;
 		if ("F".equals(life.getGender())) {
 			uniK = d * (g.equals("sa") || g.equals("mena") || g.equals("ssa") ? 1 : 1.2);
@@ -1084,7 +1087,7 @@ public class EngineService {
 				uni = rs.getEnrollUni();
 			}
 			double admit = clamp(0.1 + uni / 400 + (life.getKnowledge() - 40) / 300 + (life.getWealthClass() - 3) * 0.03, 0.05, 0.45);
-			return clamp(admit * (1 + studyEffect(life)), 0, 0.9) * 0.5; // C13 학업 능력 보정
+			return admit * 0.5;
 		}
 		return eduProbs(life, stat)[next];
 	}
@@ -1212,6 +1215,7 @@ public class EngineService {
 					life.setJobStatus("EMPLOYED");
 					life.setIncomeRate(job.getIncomeRate());
 					life.setJobYears(0);
+					addExperience(life, job.getJobId()); // 직업 경험 (C05)
 					// 인생 기록 (EVENT_ID는 비워 둠: LIFE_EVENT_LOG.EVENT_ID는 빈 값 허용)
 					saveEventLog(life, age, null, null, "모아 둔 돈만으로는 살기 어려워 " + job.getJobName() + " 일을 다시 시작했다.");
 				}
@@ -1497,7 +1501,8 @@ public class EngineService {
 		}
 	}
 
-	// C13 학업 능력 효과값 (예: 0.1 = 지식 증가량·진학 승산 +10%), 효과 표가 비어 있으면 0
+	// C13 학업 능력 효과값 = 타고난 재능에 더하는 값 (표준편차 단위)
+	//   TRAIT_LEVEL_EFFECT에 값이 있으면 그 값, 없으면 (레벨-1)×0.25 (Lv1 0 ~ Lv5 +1.0), 특성 기록이 없으면 0
 	// 한 인생 안에서는 바뀌지 않아서 서버 메모리에 보관 (매년 DB를 읽지 않게)
 	private final Map<Integer, Double> studyCache = new ConcurrentHashMap<>();
 
@@ -1567,9 +1572,14 @@ public class EngineService {
 
 	// ================= C09 선택 이벤트: 선택지 고르기 =================
 	// 선택 이벤트는 작년(나이+1 하기 전)에 일어났으므로 그 나이로 기록
+	@Transactional
 	public LifeDTO chooseEvent(LifeDTO life, int choiceId) {
 		if (!life.getStatus().equals("PLAYING") || life.getPendingEventId() == null) {
 			return null; // 고를 선택이 없음
+		}
+		// 같은 선택을 두 번 반영하지 않게 잠금 (버튼 연타 시 두 번째는 이미 골라져서 0줄 → 무시)
+		if (engineDao.lockPending(life) == 0) {
+			return null;
 		}
 		int age = life.getCurrentAge() - 1;
 
@@ -1581,6 +1591,16 @@ public class EngineService {
 		applyEvent(life, r, age, choiceId);
 		fixStats(life);
 		life.setPendingEventId(null);
+
+		// 고른 결과로 실직·조기 은퇴 등이 생기면 나이대·직업 제안을 바로 갱신 (다음 해까지 기다리지 않게)
+		String newStage = stageOf(life);
+		if (newStage != null && !newStage.equals(life.getStageCode())) {
+			life.setStageCode(newStage);
+			life.setFocusCode(null);
+			life.setNeedFocus(true);
+			life.setFocusOptions(focusOptions(newStage, life));
+		}
+		showOffers(life, yearStat(life));
 
 		List<EventResultDTO> list = new ArrayList<>();
 		list.add(r);
@@ -1606,23 +1626,14 @@ public class EngineService {
 	}
 
 	// 이벤트 결과의 상태 변경 처리 (RESULT_ACTION)
-	// 결혼 상태는 경험 STATE_MARRIED로도 남김: 윤아님 이벤트 조건에 쓰임
-	//   (출산 LE_BIRTH_1의 필요 경험, 연애 LE_LOVE_*·결혼 생활 변화의 제외/필요 경험)
+	// 결혼 상태(IS_MARRIED)는 윤아님 rollYear가 이벤트 조건용 STATE_MARRIED로 바꿔서 씀 (DB 저장 없음)
 	private void applyAction(LifeDTO life, String action, String migrateTo, int age) {
 		if (action == null) {
 			return;
 		}
 		switch (action) {
 		case "MARRY": // 결혼
-			if (!"Y".equals(life.getMarriedYn())) {
-				life.setMarriedYn("Y");
-				ExperienceDTO married = new ExperienceDTO();
-				married.setLifeId(life.getLifeId());
-				married.setExpId("STATE_MARRIED");
-				married.setAge(age);
-				married.setYearNo(life.getBirthYear() + age);
-				engineDao.insertExperience(married);
-			}
+			life.setMarriedYn("Y");
 			break;
 		case "CHILD": // 자녀 +1
 			life.setChildCount(life.getChildCount() + 1);
@@ -1630,13 +1641,7 @@ public class EngineService {
 		case "MARRIAGE_END": // 이혼·사별 (윤아님 이벤트 값): 결혼 상태 해제 (자녀 수는 그대로)
 		case "DIVORCE":
 		case "SPOUSE_DEATH":
-			if ("Y".equals(life.getMarriedYn())) {
-				life.setMarriedYn("N");
-				ExperienceDTO married = new ExperienceDTO();
-				married.setLifeId(life.getLifeId());
-				married.setExpId("STATE_MARRIED");
-				engineDao.deleteExperience(married); // 다시 연애·재혼할 수 있게, 출산은 멈춤
-			}
+			life.setMarriedYn("N"); // 다시 연애·재혼할 수 있게, 첫째 출산은 멈춤 (STATE_MARRIED가 빠짐)
 			break;
 		case "PARENT_DEATH": // 부모 사망
 			life.setParentAlive("N");

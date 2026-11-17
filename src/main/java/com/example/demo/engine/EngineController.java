@@ -94,8 +94,8 @@ public class EngineController {
 		}
 		life = engineService.nextYear(life);
 		if (life == null) {
-			return ResponseEntity.badRequest()
-					.body("이미 끝난 인생이에요.");
+			return ResponseEntity.status(409)
+					.body("이미 끝났거나 방금 진행된 해예요. 새로고침해 주세요.");
 		}
 		return ResponseEntity.ok(life);
 	}
@@ -127,25 +127,7 @@ public class EngineController {
 		life = engineService.chooseJob(life, req.getJobId());
 		if (life == null) {
 			return ResponseEntity.badRequest()
-					.body("지금은 직업을 고를 수 없거나, 학력이 부족한 직업이에요.");
-		}
-		return ResponseEntity.ok(life);
-	}
-
-	// C03 비회원 → 회원 전환  POST /api/engine/claim  { guestToken }
-	// 비회원으로 진행하다 회원가입·로그인한 직후 화면에서 호출 (Authorization 헤더 필수)
-	// 이미 진행 중인 회원 인생이 있으면 전환하지 않음
-	@PostMapping("/api/engine/claim")
-	public ResponseEntity<?> claimGuestLife(@RequestBody EngineRequestDTO req,
-			@RequestHeader(value = "Authorization", required = false) String auth) {
-		Integer memberId = loginMemberId(auth);
-		if (memberId == null) {
-			return ResponseEntity.status(401).body("로그인이 필요해요.");
-		}
-		LifeDTO life = engineService.claimGuestLife(memberId, req.getGuestToken());
-		if (life == null) {
-			return ResponseEntity.status(404)
-					.body("전환할 비회원 인생이 없거나, 이미 진행 중인 회원 인생이 있어요.");
+					.body("지금은 직업을 고를 수 없거나, 올해 제안받은 직업이 아니에요.");
 		}
 		return ResponseEntity.ok(life);
 	}

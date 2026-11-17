@@ -37,10 +37,10 @@ public interface EngineDao {
 
 	// C05 경험
 	int insertExperience(ExperienceDTO exp);
-	int deleteExperience(ExperienceDTO exp); // 상태 경험 지우기 (이혼·사별 시 STATE_MARRIED)
 
-	// C03 비회원 인생을 회원 인생으로 전환
-	int claimGuestLife(LifeDTO life);
+	// 동시에 같은 해를 두 번 진행·같은 선택을 두 번 반영하지 않게 잠금 (0이면 이미 처리됨)
+	int lockLifeYear(LifeDTO life);
+	int lockPending(LifeDTO life);
 
 	// C10 → C06 역사 사건 보정값 (실직·학업 중단·피란)
 	HistEffectDTO selectHistEffect(String eventId);
