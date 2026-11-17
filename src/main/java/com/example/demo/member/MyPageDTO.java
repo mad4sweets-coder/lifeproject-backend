@@ -8,6 +8,7 @@ public class MyPageDTO {
 	private String loginId;     // 아이디
 	private String nickname;    // 닉네임
 	private String email;       // 이메일
+	private String phone;       // 전화번호 (숫자만, 없으면 null - 예전 가입 회원)
 	private String joinDate;    // 가입 일자 (SQL에서 'YYYY-MM-DD' 글자로 바꿔서 받음)
 	private int point;          // 보유 포인트
 
@@ -29,6 +30,9 @@ public class MyPageDTO {
 
 	public String getEmail() { return email; }
 	public void setEmail(String email) { this.email = email; }
+
+	public String getPhone() { return phone; }
+	public void setPhone(String phone) { this.phone = phone; }
 
 	public String getJoinDate() { return joinDate; }
 	public void setJoinDate(String joinDate) { this.joinDate = joinDate; }
