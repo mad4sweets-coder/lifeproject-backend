@@ -21,6 +21,8 @@ public class EventResultDTO {
 	private double deathAdd; // 역사 사건용
 	private String deathCause;
 
+	private String expId;
+
 	private boolean choice; // 선택 이벤트 여부
 	private List<EventChoiceDTO> choices;
 
@@ -158,5 +160,13 @@ public class EventResultDTO {
 
 	public void setChoices(List<EventChoiceDTO> choices) {
 		this.choices = choices;
+	}
+
+	public String getExpId() {
+		return expId;
+	}
+
+	public void setExpId(String expId) {
+		this.expId = expId;
 	}
 }
