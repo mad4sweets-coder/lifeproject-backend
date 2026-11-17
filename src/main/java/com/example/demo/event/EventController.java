@@ -19,9 +19,11 @@ import com.example.demo.event.dto.GameEventDTO;
 public class EventController {
 
 	private final EventService eServ;
+	private final EventDAO eDAO;
 
-	public EventController(EventService eServ) {
+	public EventController(EventService eServ, EventDAO eDAO) {
 		this.eServ = eServ;
+		this.eDAO = eDAO;
 	}
 
 	@GetMapping("/templates")
@@ -73,5 +75,19 @@ public class EventController {
 		life.setCurrentCountry(country);
 		life.setName(name);
 		return eServ.applyChoice(life, choiceId, age);
+	}
+
+	// 테스트: 역사 이벤트 후보 (최종 전에 삭제)
+	@GetMapping("/test/hist")
+	public List<GameEventDTO> testHist(@RequestParam String country, @RequestParam int year, @RequestParam int age,
+			@RequestParam String gender) {
+		return eDAO.selectHistCandidates(country, year, age, gender);
+	}
+
+	// 테스트: 역사 이벤트 굴리기 (최종 전에 삭제)
+	@GetMapping("/test/histroll")
+	public List<EventResultDTO> testHistRoll(@RequestParam String country, @RequestParam int year,
+			@RequestParam int age, @RequestParam String gender, @RequestParam String name) {
+		return eServ.rollHist(country, year, age, gender, name, new ArrayList<>());
 	}
 }
