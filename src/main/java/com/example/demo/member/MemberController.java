@@ -15,7 +15,6 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.example.demo.commons.JwtUtil;
 
-// React 가 보내는 요청을 처음 받는 곳
 @RestController
 @RequestMapping("/api/members")
 public class MemberController {
@@ -29,7 +28,6 @@ public class MemberController {
 	}
 
 	// 회원가입 (M01)  POST /api/members
-	// 보내는 JSON: { loginId, password, passwordCheck, nickname, email }
 	@PostMapping
 	public ResponseEntity<?> join(@RequestBody MemberDTO dto) {
 		try {
@@ -63,13 +61,11 @@ public class MemberController {
 	}
 
 	// 로그인 (M02)  POST /api/members/login
-	// 보내는 JSON: { loginId, password, guestToken }
 	// 돌려주는 JSON: { token, nickname, memberRole, guestConverted }
 	@PostMapping("/login")
 	public ResponseEntity<?> login(@RequestBody MemberLoginDTO dto) {
 		MemberDTO member = service.login(dto.getLoginId(), dto.getPassword());
 
-		// 어느 쪽이 틀렸는지는 알려주지 않음 (M02 규칙)
 		if (member == null) {
 			return ResponseEntity.status(401)
 					.body(Map.of("message", "아이디 또는 비밀번호가 올바르지 않습니다."));
@@ -89,9 +85,6 @@ public class MemberController {
 	}
 
 	// 마이페이지 (M04)  GET /api/members/me
-	// 로그인한 회원만 들어옴 → LoginValidator 가 토큰에서 꺼낸 회원 번호를 "memberId" 로 담아 줌
-	// 돌려주는 JSON: { loginId, nickname, email, joinDate, point, lifeCount, questDone,
-	//                lifeId, lifeName, countryName, currentAge }  (진행 중인 인생 없으면 lifeId 는 null)
 	@GetMapping("/me")
 	public ResponseEntity<?> myPage(@RequestAttribute("memberId") String memberId) {
 		MyPageDTO my = service.myPage(Integer.parseInt(memberId));
@@ -104,7 +97,6 @@ public class MemberController {
 	}
 
 	// 개인정보 수정 (M05)  PUT /api/members/me
-	// 보내는 JSON: { nickname, email, currentPassword, newPassword, newPasswordCheck }
 	// (새 비밀번호는 비워 두면 안 바뀜)
 	@PutMapping("/me")
 	public ResponseEntity<?> update(@RequestAttribute("memberId") String memberId,
@@ -123,7 +115,6 @@ public class MemberController {
 	}
 
 	// 회원 탈퇴 (M06)  POST /api/members/me/withdraw
-	// 보내는 JSON: { currentPassword }
 	@PostMapping("/me/withdraw")
 	public ResponseEntity<?> withdraw(@RequestAttribute("memberId") String memberId,
 			@RequestBody MemberUpdateDTO dto) {
@@ -132,5 +123,35 @@ public class MemberController {
 			return ResponseEntity.badRequest().body(Map.of("message", "비밀번호가 올바르지 않습니다."));
 		}
 		return ResponseEntity.ok(Map.of("message", "탈퇴했습니다."));
+	}
+	
+	
+	
+	@PostMapping("/find/sendCode")
+	public ResponseEntity<?> sendCode(@RequestBody MemberFindDTO dto) {
+		String error = service.sendCode(dto);
+		if(error != null) {
+			return ResponseEntity.badRequest().body(Map.of("message",error));
+		}
+		return ResponseEntity.ok(Map.of("message", "입력한 정보가 맞다면 메일이 발송됩니다."));
+	}
+	
+	@PostMapping("/find/id")
+	public ResponseEntity<?> findId(@RequestBody MemberFindDTO dto) {
+		String maskedId = service.findId(dto.getEmail(), dto.getCode()); // 예: msj***
+		if (maskedId == null) {
+			return ResponseEntity.badRequest().body(Map.of("message", "인증번호가 올바르지 않거나 만료되었습니다."));
+		}
+		return ResponseEntity.ok(Map.of("loginId", maskedId));
+	}
+
+
+	@PostMapping("/find/resetPw")
+	public ResponseEntity<?> resetPw(@RequestBody MemberFindDTO dto) {
+		String error = service.resetPassword(dto);
+		if (error != null) {
+			return ResponseEntity.badRequest().body(Map.of("message", error));
+		}
+		return ResponseEntity.ok(Map.of("message", "비밀번호를 변경했습니다."));
 	}
 }
