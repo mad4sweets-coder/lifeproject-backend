@@ -23,6 +23,7 @@ public class GameEventDTO {
 	private Double probability;
 	private String isChoice;
 	private String aiNarrate;
+	private Double effWealthRate;
 
 	public GameEventDTO() {}
 	
@@ -229,5 +230,13 @@ public class GameEventDTO {
 
 	public void setAiNarrate(String aiNarrate) {
 		this.aiNarrate = aiNarrate;
+	}
+	
+	public Double getEffWealthRate() {
+		return effWealthRate;
+	}
+
+	public void setEffWealthRate(Double effWealthRate) {
+		this.effWealthRate = effWealthRate;
 	}
 }

@@ -6,8 +6,10 @@ import java.util.List;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.example.demo.engine.LifeDTO;
 import com.example.demo.event.dto.EventResultDTO;
 import com.example.demo.event.dto.EventTemplateDTO;
 import com.example.demo.event.dto.GameEventDTO;
@@ -44,4 +46,21 @@ public class EventController {
 		}
 		return ResponseEntity.ok(result);
 	}
+	
+	// 테스트: 엔진 연결용 rollYear 확인 (최종 전에 삭제)
+		@GetMapping("/test/year")
+		public List<EventResultDTO> testYear(@RequestParam int age, @RequestParam int birthYear,
+				@RequestParam String country, @RequestParam String gender,
+				@RequestParam int wealth, @RequestParam String name,
+				@RequestParam(defaultValue = "0") int lifeId) {
+			LifeDTO life = new LifeDTO();
+			life.setLifeId(lifeId);
+			life.setCurrentAge(age);
+			life.setBirthYear(birthYear);
+			life.setCurrentCountry(country);
+			life.setGender(gender);
+			life.setWealthClass(wealth);
+			life.setName(name);
+			return eServ.rollYear(life);
+		}
 }

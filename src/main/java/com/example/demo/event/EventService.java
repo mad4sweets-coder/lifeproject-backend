@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 import com.example.demo.event.dto.EventResultDTO;
 import com.example.demo.event.dto.EventTemplateDTO;
 import com.example.demo.event.dto.GameEventDTO;
+import com.example.demo.engine.LifeDTO;
 
 @Service
 public class EventService {
@@ -67,7 +68,8 @@ public class EventService {
 			return unemp == null ? base : unemp / 100;
 		case "NET_MIGRATION": // 이민: 기본 확률 × (1 - 순이민률‰), 배율 0.5~3.0배 제한 (유출 많을수록 ↑)
 			Double mig = getStat(stat, "NET_MIGRATION_RATE");
-			if (mig == null) return base; // 통계 없으면 기본 확률
+			if (mig == null)
+				return base; // 통계 없으면 기본 확률
 			double migRate = Math.min(Math.max(1 - mig, 0.5), 3.0); // 바닥 0.5: 유입국도 최소 절반 / 천장 3.0: 극단값 방지
 			return base * migRate;
 		case "DEATH_CAUSE": // 질병: 기본 확률 × 나이대 배율 × 나라 건강 배율
@@ -155,8 +157,9 @@ public class EventService {
 		String sentence = texts.isEmpty() ? e.getTitle() : texts.get((int) (Math.random() * texts.size()));
 
 		// 2. 변수 치환
+		String countryName = eDAO.selectCountryName(countryCode);
 		sentence = sentence.replace("{이름}", name).replace("{나이}", String.valueOf(age))
-				.replace("{연도}", String.valueOf(year)).replace("{나라}", eDAO.selectCountryName(countryCode))
+				.replace("{연도}", String.valueOf(year)).replace("{나라}", countryName == null ? countryCode : countryName)
 				.replace("{변수}", e.getVarValue() == null ? "" : e.getVarValue());
 		r.setLogText(sentence);
 
@@ -166,8 +169,15 @@ public class EventService {
 		r.setEffHappiness((int) Math.round(nz(t.getEffHappiness()) * scale));
 		r.setEffKnowledge((int) Math.round(nz(t.getEffKnowledge()) * scale));
 		r.setEffRelation((int) Math.round(nz(t.getEffRelation()) * scale));
-		r.setEffIncomeRate(nz(t.getEffIncomeRate()) * scale);
-		r.setEffWealthRate(nz(t.getEffWealthRate()) * scale);
+
+		// 자산: 이벤트에 값이 있으면 그 값 그대로(소득 변화 0), 없으면 템플릿 × 배율
+		if (e.getEffWealthRate() != null) {
+			r.setEffWealthRate(round3(e.getEffWealthRate()));
+			r.setEffIncomeRate(0);
+		} else {
+			r.setEffIncomeRate(round3(nz(t.getEffIncomeRate()) * scale));
+			r.setEffWealthRate(round3(nz(t.getEffWealthRate()) * scale));
+		}
 		r.setResultAction(t.getResultAction());
 
 		return r;
@@ -176,5 +186,29 @@ public class EventService {
 	// null이면 0
 	private double nz(Number n) {
 		return n == null ? 0 : n.doubleValue();
+	}
+
+	// 소수점 3자리 반올림 (0.30000000000000004 → 0.3)
+	private double round3(double v) {
+		return Math.round(v * 1000) / 1000.0;
+	}
+
+	// ===== 엔진 연결: 1년치 이벤트 굴리기 (EngineService가 호출) =====
+	public List<EventResultDTO> rollYear(LifeDTO life) {
+		int age = life.getCurrentAge();
+		int year = life.getBirthYear() + age;
+		List<String> expIds = eDAO.selectExpIds(life.getLifeId());
+		List<EventResultDTO> results = new ArrayList<>();
+
+		for (EventTemplateDTO t : rollTemplates(age, year, life.getCurrentCountry())) {
+			GameEventDTO e = pickEvent(t, age, life.getGender(), life.getWealthClass(), expIds);
+			if (e == null)
+				continue; // 조건 맞는 이벤트 없음
+			if ("Y".equals(e.getIsChoice()))
+				continue; // 선택 이벤트는 5단계에서 처리
+
+			results.add(buildResult(t, e, life.getName(), age, year, life.getCurrentCountry()));
+		}
+		return results;
 	}
 }
