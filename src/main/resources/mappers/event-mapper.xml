@@ -47,5 +47,17 @@
 	<select id="selectCountryName" parameterType="String" resultType="String">
 		SELECT NAME_KO FROM COUNTRY WHERE COUNTRY_CODE = #{countryCode}
 	</select>
+	
+	<!-- 선택 이벤트의 선택지 목록 (순서대로) -->
+	<select id="selectChoices" parameterType="String" resultType="com.example.demo.event.dto.EventChoiceDTO">
+		SELECT * FROM EVENT_CHOICE
+		 WHERE EVENT_ID = #{eventId}
+		 ORDER BY CHOICE_ORDER
+	</select>
+	
+	<!-- 선택지 하나 -->
+	<select id="selectChoice" parameterType="int" resultType="com.example.demo.event.dto.EventChoiceDTO">
+		SELECT * FROM EVENT_CHOICE WHERE CHOICE_ID = #{choiceId}
+	</select>
 
 </mapper>

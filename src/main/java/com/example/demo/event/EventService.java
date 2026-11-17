@@ -6,10 +6,11 @@ import java.util.Map;
 
 import org.springframework.stereotype.Service;
 
+import com.example.demo.engine.LifeDTO;
+import com.example.demo.event.dto.EventChoiceDTO;
 import com.example.demo.event.dto.EventResultDTO;
 import com.example.demo.event.dto.EventTemplateDTO;
 import com.example.demo.event.dto.GameEventDTO;
-import com.example.demo.engine.LifeDTO;
 
 @Service
 public class EventService {
@@ -147,10 +148,14 @@ public class EventService {
 			String countryCode) {
 		EventResultDTO r = new EventResultDTO();
 		r.setEventId(e.getEventId());
+		r.setExpId(e.getEventId());
 		r.setEventType(e.getEventType());
 		r.setTitle(e.getTitle());
 		r.setAiNarrate("Y".equals(e.getAiNarrate()));
 		r.setChoice("Y".equals(e.getIsChoice()));
+		if (r.isChoice()) {
+			r.setChoices(eDAO.selectChoices(e.getEventId()));
+		}
 
 		// 1. 문장: 템플릿 문장 2~3개 중 하나를 랜덤으로 고르기
 		List<String> texts = eDAO.selectTexts(t.getTemplateId());
@@ -199,16 +204,70 @@ public class EventService {
 		int year = life.getBirthYear() + age;
 		List<String> expIds = eDAO.selectExpIds(life.getLifeId());
 		List<EventResultDTO> results = new ArrayList<>();
+		boolean hasChoice = false; // 한 해에 선택 이벤트는 1개만
 
 		for (EventTemplateDTO t : rollTemplates(age, year, life.getCurrentCountry())) {
 			GameEventDTO e = pickEvent(t, age, life.getGender(), life.getWealthClass(), expIds);
 			if (e == null)
 				continue; // 조건 맞는 이벤트 없음
-			if ("Y".equals(e.getIsChoice()))
-				continue; // 선택 이벤트는 5단계에서 처리
+			if ("Y".equals(e.getIsChoice())) {
+				if (hasChoice)
+					continue; // 이미 선택 이벤트가 있으면 건너뜀
+				hasChoice = true;
+			}
 
 			results.add(buildResult(t, e, life.getName(), age, year, life.getCurrentCountry()));
 		}
 		return results;
+	}
+
+	// ===== 5단계: 선택지를 고르면 결과 만들기 =====
+
+	public EventResultDTO applyChoice(LifeDTO life, int choiceId, int age) {
+		EventChoiceDTO c = eDAO.selectChoice(choiceId);
+		if (c == null)
+			return null; // 없는 선택지
+
+		int year = life.getBirthYear() + age;
+
+		EventResultDTO r = new EventResultDTO();
+		r.setEventId(c.getEventId());
+		r.setExpId(c.getEventId() + "_" + c.getChoiceOrder()); // 예: LE_MIGRATE_WORK_1
+		r.setEventType("LIFE");
+		r.setTitle(c.getChoiceText());
+
+		// 1. 결과 문구 변수 치환
+		String countryName = eDAO.selectCountryName(life.getCurrentCountry());
+		String text = c.getResultText().replace("{이름}", life.getName()).replace("{나이}", String.valueOf(age))
+				.replace("{연도}", String.valueOf(year))
+				.replace("{나라}", countryName == null ? life.getCurrentCountry() : countryName);
+
+		// 2. 효과 (선택지 값 그대로)
+		r.setEffHealth((int) nz(c.getEffHealth()));
+		r.setEffHappiness((int) nz(c.getEffHappiness()));
+		r.setEffKnowledge((int) nz(c.getEffKnowledge()));
+		r.setEffRelation((int) nz(c.getEffRelation()));
+		r.setEffIncomeRate(round3(nz(c.getEffIncomeRate())));
+		double wealth = round3(nz(c.getEffWealthRate()));
+
+		// 3. 투자: 50% 확률로 성공(자산 +) / 실패(자산 −)
+		if ("INVEST".equals(c.getResultAction())) {
+			if (Math.random() < 0.5) {
+				text = text + " 투자는 성공적이었다.";
+			} else {
+				wealth = -wealth;
+				text = text + " 하지만 투자는 실패해 손해를 봤다.";
+				r.setEffIncomeRate(0); // 실패하면 소득 증가 없음
+				r.setEffHappiness(-Math.abs(r.getEffHappiness()) - 3); // 실패하면 행복 감소
+			}
+			r.setResultAction(null); // 투자는 엔진에서 따로 처리할 상태 변화 없음
+		} else {
+			r.setResultAction(c.getResultAction()); // MARRY, MIGRATE 등
+		}
+		r.setEffWealthRate(wealth);
+		r.setMigrateTo(c.getMigrateTo());
+		r.setLogText(text);
+
+		return r;
 	}
 }
