@@ -159,6 +159,11 @@ public class EngineService {
 		return mine ? life : null;
 	}
 
+	// 내 인생인지 확인만 (C18 결과 화면·C19 AI 이야기에서 사용, 예전 이름 유지)
+	public boolean isMyLife(int lifeId, Integer memberId, String guestToken) {
+		return loadMyLife(lifeId, memberId, guestToken) != null;
+	}
+
 	// 선택 이벤트를 아직 안 골랐는지 (다음 해로 못 넘어감)
 	public boolean isWaitingChoice(LifeDTO life) {
 		return life.getPendingEventId() != null;
@@ -270,11 +275,32 @@ public class EngineService {
 		eventStep(life);
 
 		// ⑥ 사망 판정 (C07): 올해(현재 나이)를 못 넘기면 사망
-		if (isDead(life, stat)) {
+		//    역사 이벤트의 deathAdd(전쟁·기근 등)는 올해 사망 확률에 더함 (윤아님 EventResultDTO.deathAdd)
+		double histAdd = 0;
+		String histCause = null;
+		double histBest = 0;
+		if (life.getEvents() != null) {
+			for (EventResultDTO ev : life.getEvents()) {
+				if (ev.getDeathAdd() > 0) {
+					histAdd = histAdd + ev.getDeathAdd();
+					if (ev.getDeathCause() != null && ev.getDeathAdd() > histBest) {
+						histBest = ev.getDeathAdd();
+						histCause = ev.getDeathCause(); // 가산이 가장 큰 사건을 원인 후보로
+					}
+				}
+			}
+		}
+		double deathP = Math.min(1, deathRate(life, stat) + histAdd);
+		if (random.nextDouble() < deathP) {
 			engineDao.updateLifeYear(life); // 마지막 해의 능력치·소득·재산 저장
 			life.setStatus("ENDED");
 			life.setDeathAge(life.getCurrentAge());
-			life.setDeathCause(deathCause(life));
+			// 사망 원인: 역사 사건 몫(histAdd ÷ 전체 확률)만큼의 확률로 사건 원인, 아니면 평소 원인
+			if (histCause != null && random.nextDouble() < histAdd / deathP) {
+				life.setDeathCause(histCause);
+			} else {
+				life.setDeathCause(deathCause(life));
+			}
 			finalResult(life);
 			engineDao.endLife(life);
 			return life;
@@ -1037,12 +1063,6 @@ public class EngineService {
 	}
 
 	// ================= C07 사망 판정 =================
-
-	// 올해 죽는지 판정 (true = 사망)
-	private boolean isDead(LifeDTO life, CountryStatDTO stat) {
-		double p = deathRate(life, stat);
-		return random.nextDouble() < p;
-	}
 
 	// 올해 사망 확률 (0 ~ 1)
 	private double deathRate(LifeDTO life, CountryStatDTO stat) {
