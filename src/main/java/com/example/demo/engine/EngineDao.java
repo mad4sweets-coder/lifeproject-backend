@@ -29,7 +29,7 @@ public interface EngineDao {
 	CountryStatDTO selectYearStat(LifeDTO life);
 	int endLife(LifeDTO life);
 	List<DeathCauseDTO> selectDeathCauses(DeathCauseDTO cond);
-	Long selectAvgIncome(int lifeId);
+	Long selectAvgIncome(LifeDTO life);
 	Double selectPoorerPct(LifeDTO life);
 
 	// C04 집중 선택

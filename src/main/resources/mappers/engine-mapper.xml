@@ -18,6 +18,7 @@
 		       s.BIRTHS           AS births,
 		       s.LIFE_EXPECTANCY  AS lifeExpectancy,
 		       s.INFANT_MORTALITY AS infantMortality,
+		       s.U5_MORTALITY     AS u5Mortality,
 		       s.GDP_PER_CAPITA   AS gdpPerCapita,
 		       s.URBAN_RATE       AS urbanRate,
 		       s.SEX_RATIO_BIRTH  AS sexRatioBirth
@@ -371,12 +372,17 @@
 		  )
 	</select>
 
-	<!-- 평균 소득 (소득이 있던 해만) -->
-	<select id="selectAvgIncome" parameterType="int" resultType="long">
-		SELECT ROUND(AVG(INCOME))
-		FROM LIFE_YEAR_LOG
-		WHERE LIFE_ID = #{lifeId}
-		  AND INCOME > 0
+	<!-- 평균 소득 (소득이 있던 해만)
+	     연도 기록(LIFE_YEAR_LOG)에는 죽은 해가 저장되지 않으므로, 죽은 해 소득(#{income})도 소득이 있으면 같이 평균에 넣음 -->
+	<select id="selectAvgIncome" parameterType="com.example.demo.engine.LifeDTO" resultType="long">
+		SELECT ROUND(AVG(INCOME)) FROM (
+			SELECT INCOME
+			FROM LIFE_YEAR_LOG
+			WHERE LIFE_ID = #{lifeId}
+			  AND INCOME > 0
+			UNION ALL
+			SELECT #{income} FROM dual WHERE #{income} > 0
+		)
 	</select>
 
 	<!-- 소득 상위 % 계산용: 등록된 나라 인구 중 "1인당 GDP가 내 평균 소득보다 낮은 나라"에 사는 인구 비율 (%)
