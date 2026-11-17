@@ -18,6 +18,7 @@
 		       s.BIRTHS           AS births,
 		       s.LIFE_EXPECTANCY  AS lifeExpectancy,
 		       s.INFANT_MORTALITY AS infantMortality,
+		       s.U5_MORTALITY     AS u5Mortality,
 		       s.GDP_PER_CAPITA   AS gdpPerCapita,
 		       s.URBAN_RATE       AS urbanRate,
 		       s.SEX_RATIO_BIRTH  AS sexRatioBirth
@@ -281,10 +282,56 @@
 
 	<!-- ================= C05 경험 ================= -->
 
+	<!-- 같은 나이에 같은 경험이 이미 있으면 넣지 않음 (기본키 LIFE_ID+EXP_ID+AGE 중복 에러 방지) -->
 	<insert id="insertExperience" parameterType="com.example.demo.engine.ExperienceDTO">
 		INSERT INTO LIFE_EXPERIENCE (LIFE_ID, EXP_ID, AGE, YEAR_NO)
-		VALUES (#{lifeId}, #{expId}, #{age}, #{yearNo})
+		SELECT #{lifeId}, #{expId}, #{age}, #{yearNo} FROM dual
+		WHERE NOT EXISTS (SELECT 1 FROM LIFE_EXPERIENCE
+		                  WHERE LIFE_ID = #{lifeId} AND EXP_ID = #{expId} AND AGE = #{age})
 	</insert>
+
+	<!-- 한 해 진행 잠금: 아직 그 나이·진행 중일 때만 1줄 (트랜잭션 끝날 때까지 다른 요청은 기다림) -->
+	<update id="lockLifeYear" parameterType="com.example.demo.engine.LifeDTO">
+		UPDATE LIFE SET CURRENT_AGE = CURRENT_AGE
+		WHERE LIFE_ID = #{lifeId} AND CURRENT_AGE = #{currentAge} AND STATUS = 'PLAYING'
+		  AND PENDING_EVENT_ID IS NULL
+	</update>
+
+	<!-- 선택 이벤트 잠금: 아직 그 이벤트를 기다리는 중일 때만 1줄 -->
+	<update id="lockPending" parameterType="com.example.demo.engine.LifeDTO">
+		UPDATE LIFE SET PENDING_EVENT_ID = PENDING_EVENT_ID
+		WHERE LIFE_ID = #{lifeId} AND PENDING_EVENT_ID = #{pendingEventId} AND STATUS = 'PLAYING'
+	</update>
+
+	<!-- C10 → C06: 역사 사건의 강도와 유형별 실직·학업 중단·피란 확률 -->
+	<select id="selectHistEffect" parameterType="string" resultType="com.example.demo.engine.HistEffectDTO">
+		SELECT NVL(G.INTENSITY, 1) AS intensity,
+		       T.JOB_LOSS_ADD      AS jobLossAdd,
+		       T.EDU_STOP_ADD      AS eduStopAdd,
+		       T.MIGRATE_ADD       AS migrateAdd,
+		       T.TYPE_NAME         AS typeName
+		FROM GAME_EVENT G
+		JOIN HIST_EVENT_TYPE T ON G.HIST_TYPE_CODE = T.TYPE_CODE
+		WHERE G.EVENT_ID = #{eventId}
+	</select>
+
+	<!-- C13: 태어날 때 특성 레벨 저장 (회원은 MEMBER_TRAIT 레벨, 비회원·없는 특성은 1) -->
+	<insert id="insertLifeTraits" parameterType="com.example.demo.engine.LifeDTO">
+		INSERT INTO LIFE_TRAIT (LIFE_ID, TRAIT_ID, TRAIT_LEVEL)
+		SELECT #{lifeId}, T.TRAIT_ID, NVL(M.TRAIT_LEVEL, 1)
+		FROM TRAIT T
+		LEFT JOIN MEMBER_TRAIT M ON M.TRAIT_ID = T.TRAIT_ID AND M.MEMBER_ID = #{memberId, jdbcType=NUMERIC}
+	</insert>
+
+	<!-- C13: 이 인생의 학업 능력(STUDY) 효과값 = 타고난 재능 보너스 (효과 표에 값이 없으면 (레벨-1)×0.25) -->
+	<select id="selectStudyEffect" parameterType="int" resultType="double">
+		SELECT NVL(E.EFFECT_VALUE, (L.TRAIT_LEVEL - 1) * 0.25)
+		FROM LIFE_TRAIT L
+		LEFT JOIN TRAIT_LEVEL_EFFECT E ON E.TRAIT_ID = L.TRAIT_ID AND E.LEVEL_NO = L.TRAIT_LEVEL
+		WHERE L.LIFE_ID = #{lifeId}
+		  AND L.TRAIT_ID = 'STUDY'
+	</select>
+
 
 	<!-- ================= C09 이벤트 기록 ================= -->
 
@@ -371,12 +418,17 @@
 		  )
 	</select>
 
-	<!-- 평균 소득 (소득이 있던 해만) -->
-	<select id="selectAvgIncome" parameterType="int" resultType="long">
-		SELECT ROUND(AVG(INCOME))
-		FROM LIFE_YEAR_LOG
-		WHERE LIFE_ID = #{lifeId}
-		  AND INCOME > 0
+	<!-- 평균 소득 (소득이 있던 해만)
+	     연도 기록(LIFE_YEAR_LOG)에는 죽은 해가 저장되지 않으므로, 죽은 해 소득(#{income})도 소득이 있으면 같이 평균에 넣음 -->
+	<select id="selectAvgIncome" parameterType="com.example.demo.engine.LifeDTO" resultType="long">
+		SELECT ROUND(AVG(INCOME)) FROM (
+			SELECT INCOME
+			FROM LIFE_YEAR_LOG
+			WHERE LIFE_ID = #{lifeId}
+			  AND INCOME > 0
+			UNION ALL
+			SELECT #{income} FROM dual WHERE #{income} > 0
+		)
 	</select>
 
 	<!-- 소득 상위 % 계산용: 등록된 나라 인구 중 "1인당 GDP가 내 평균 소득보다 낮은 나라"에 사는 인구 비율 (%)

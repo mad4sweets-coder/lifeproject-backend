@@ -29,7 +29,7 @@ public interface EngineDao {
 	CountryStatDTO selectYearStat(LifeDTO life);
 	int endLife(LifeDTO life);
 	List<DeathCauseDTO> selectDeathCauses(DeathCauseDTO cond);
-	Long selectAvgIncome(int lifeId);
+	Long selectAvgIncome(LifeDTO life);
 	Double selectPoorerPct(LifeDTO life);
 
 	// C04 집중 선택
@@ -37,6 +37,17 @@ public interface EngineDao {
 
 	// C05 경험
 	int insertExperience(ExperienceDTO exp);
+
+	// 동시에 같은 해를 두 번 진행·같은 선택을 두 번 반영하지 않게 잠금 (0이면 이미 처리됨)
+	int lockLifeYear(LifeDTO life);
+	int lockPending(LifeDTO life);
+
+	// C10 → C06 역사 사건 보정값 (실직·학업 중단·피란)
+	HistEffectDTO selectHistEffect(String eventId);
+
+	// C13 특성: 태어날 때 회원 특성 레벨 복사, 학업 능력 효과값
+	int insertLifeTraits(LifeDTO life);
+	Double selectStudyEffect(int lifeId);
 
 	// C09 이벤트 기록
 	int insertEventLog(EventLogDTO log);

@@ -94,8 +94,8 @@ public class EngineController {
 		}
 		life = engineService.nextYear(life);
 		if (life == null) {
-			return ResponseEntity.badRequest()
-					.body("이미 끝난 인생이에요.");
+			return ResponseEntity.status(409)
+					.body("이미 끝났거나 방금 진행된 해예요. 새로고침해 주세요.");
 		}
 		return ResponseEntity.ok(life);
 	}
@@ -127,7 +127,7 @@ public class EngineController {
 		life = engineService.chooseJob(life, req.getJobId());
 		if (life == null) {
 			return ResponseEntity.badRequest()
-					.body("지금은 직업을 고를 수 없거나, 학력이 부족한 직업이에요.");
+					.body("지금은 직업을 고를 수 없거나, 올해 제안받은 직업이 아니에요.");
 		}
 		return ResponseEntity.ok(life);
 	}

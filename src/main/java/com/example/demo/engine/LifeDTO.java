@@ -57,6 +57,7 @@ public class LifeDTO {
 	private String pendingEventId;	// 고르기를 기다리는 선택 이벤트 (C09, PENDING_EVENT_ID)
 	private boolean needChoice;	// [화면용] 선택 이벤트 창 띄우기 (C09)
 	private EventResultDTO pendingEvent;	// [화면용] 선택 이벤트 문장 + 선택지 (C09)
+	private String regionCode;	// [화면용] 지금 사는 나라의 권역 (C08 마을 그림: EAST, SOUTHEAST, SOUTH, CENTRAL, WEST)
 
 	public int getLifeId() {
 		return lifeId;
@@ -469,6 +470,14 @@ public class LifeDTO {
 
 	public EventResultDTO getPendingEvent() {
 		return pendingEvent;
+	}
+
+	public String getRegionCode() {
+		return regionCode;
+	}
+
+	public void setRegionCode(String regionCode) {
+		this.regionCode = regionCode;
 	}
 
 	public void setPendingEvent(EventResultDTO pendingEvent) {
