@@ -1,5 +1,7 @@
 package com.example.demo.engine;
 
+import com.example.demo.event.dto.EventResultDTO;
+
 import java.util.List;
 
 public class LifeDTO {
@@ -51,6 +53,7 @@ public class LifeDTO {
 	private Double lifeExpectancy;	// [화면용] 기대수명
 	private Double infantMortality;	// [화면용] 영아사망률
 	private Double gdpPerCapita;	// [화면용] 1인당 GDP
+	private List<EventResultDTO> events;	// [화면용] 올해 일어난 일 (C09)
 
 	public int getLifeId() {
 		return lifeId;
@@ -436,4 +439,12 @@ public class LifeDTO {
 		this.incomeTopPct = incomeTopPct;
 	}
 
+
+	public List<EventResultDTO> getEvents() {
+		return events;
+	}
+
+	public void setEvents(List<EventResultDTO> events) {
+		this.events = events;
+	}
 }

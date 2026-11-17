@@ -8,14 +8,19 @@ import java.util.UUID;
 
 import org.springframework.stereotype.Service;
 
+import com.example.demo.event.EventService;
+import com.example.demo.event.dto.EventResultDTO;
+
 @Service
 public class EngineService {
 
 	private final EngineDao engineDao;
+	private final EventService eventService; // C09·C10 이벤트 (장윤아님)
 
-	// 생성자 주입: 스프링이 객체를 만들 때 EngineDao를 넣어줌
-	public EngineService(EngineDao engineDao) {
+	// 생성자 주입: 스프링이 객체를 만들 때 EngineDao, EventService를 넣어줌
+	public EngineService(EngineDao engineDao, EventService eventService) {
 		this.engineDao = engineDao;
+		this.eventService = eventService;
 	}
 
 	private Random random = new Random();
@@ -189,7 +194,8 @@ public class EngineService {
 		// ④ 소득·재산 (C06-2)
 		moneyStep(life, stat);
 
-		// ⑤ 인생·역사 이벤트 (C09, C10 - 장윤아님)
+		// ⑤ 인생·역사 이벤트 (C09, C10): 윤아님 rollYear로 올해 일어난 일을 뽑고 → 효과·상태를 인생에 반영
+		eventStep(life);
 
 		// ⑥ 사망 판정 (C07): 올해(현재 나이)를 못 넘기면 사망
 		if (isDead(life, stat)) {
@@ -778,6 +784,88 @@ public class EngineService {
 
 		// 3. 남은 돈은 재산에 (마이너스면 빚)
 		life.setAssets(life.getAssets() + Math.round(income - cost));
+	}
+
+	// ================= C09 이벤트 반영 =================
+
+	// 올해 일어난 이벤트(윤아님 EventService.rollYear)를 인생에 반영
+	// (선택 이벤트는 rollYear에서 빠짐 → 윤아님 5단계에서 처리)
+	private void eventStep(LifeDTO life) {
+		List<EventResultDTO> events = eventService.rollYear(life);
+
+		for (EventResultDTO e : events) {
+			// 1. 능력치 변화 (C05)
+			life.setHealth(life.getHealth() + e.getEffHealth());
+			life.setHappiness(life.getHappiness() + e.getEffHappiness());
+			life.setKnowledge(life.getKnowledge() + e.getEffKnowledge());
+			life.setRelation(life.getRelation() + e.getEffRelation());
+
+			// 2. 소득 배율 변화 (C06): 일하는 중일 때만, 0.1 = +10%
+			if (e.getEffIncomeRate() != 0 && "EMPLOYED".equals(life.getJobStatus()) && life.getIncomeRate() != null) {
+				life.setIncomeRate(life.getIncomeRate() * (1 + e.getEffIncomeRate()));
+			}
+
+			// 3. 재산 변화율 (C06): 재산 × 비율 (0.3 = +30%, -0.5 = -50%)
+			//    재산이 0 이하(빚)면 변화 없음 → 빚이 있을 때 투자 손실로 빚이 줄어드는 일 방지
+			if (e.getEffWealthRate() != 0 && life.getAssets() > 0) {
+				life.setAssets(life.getAssets() + Math.round(life.getAssets() * e.getEffWealthRate()));
+			}
+
+			// 4. 상태 변경 (결혼·자녀·부모 사망·실직·조기 은퇴·이민)
+			applyAction(life, e.getResultAction(), e.getMigrateTo());
+
+			// 5. 경험 기록: 윤아님 pickEvent의 '한 번만'·'필요 경험'·'제외 경험' 판정에 쓰임
+			addExperience(life, e.getEventId());
+
+			// 6. 인생 기록 문장 저장 (C03 기록 화면, C11 AI 서술 대상 표시)
+			EventLogDTO log = new EventLogDTO();
+			log.setLifeId(life.getLifeId());
+			log.setAge(life.getCurrentAge());
+			log.setYearNo(life.getBirthYear() + life.getCurrentAge());
+			log.setEventId(e.getEventId());
+			log.setLogText(e.getLogText());
+			engineDao.insertEventLog(log);
+		}
+
+		fixStats(life);
+		life.setEvents(events); // [화면용] 올해 일어난 일
+	}
+
+	// 이벤트 결과의 상태 변경 처리 (RESULT_ACTION)
+	private void applyAction(LifeDTO life, String action, String migrateTo) {
+		if (action == null) {
+			return;
+		}
+		switch (action) {
+		case "MARRY": // 결혼
+			life.setMarriedYn("Y");
+			break;
+		case "CHILD": // 자녀 +1
+			life.setChildCount(life.getChildCount() + 1);
+			break;
+		case "PARENT_DEATH": // 부모 사망
+			life.setParentAlive("N");
+			break;
+		case "JOB_LOSS": // 실직: 다음 해부터 다시 직업 제안 (jobStep)
+			if ("EMPLOYED".equals(life.getJobStatus())) {
+				life.setJobStatus("UNEMPLOYED");
+				life.setJobYears(0);
+			}
+			break;
+		case "EARLY_RETIRE": // 조기 은퇴: 정년 은퇴와 같이 연금 = 마지막 소득 × 0.3
+			if ("EMPLOYED".equals(life.getJobStatus())) {
+				life.setJobStatus("RETIRED");
+				life.setPension(Math.round(life.getIncome() * 0.3));
+			}
+			break;
+		case "MIGRATE": // 이민: 갈 나라가 정해져 있을 때만
+			if (migrateTo != null && !migrateTo.equals(life.getCurrentCountry())) {
+				life.setCurrentCountry(migrateTo);
+			}
+			break;
+		default: // INVEST 등: 재산 변화율만 반영 (위 3번)
+			break;
+		}
 	}
 
 	// ================= C05 경험 기록 =================
