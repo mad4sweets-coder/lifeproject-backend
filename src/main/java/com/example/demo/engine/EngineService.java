@@ -437,6 +437,7 @@ public class EngineService {
 		// ⑧ 번호 받고 저장 + 0세 기록
 		life.setLifeId(engineDao.selectNextLifeId());
 		engineDao.insertLife(life);
+		engineDao.insertLifeTraits(life); // C13 특성 레벨 저장 (회원 특성, 비회원은 모두 1)
 		engineDao.insertYearLog(life);
 
 		// 출생 화면 표시용
@@ -445,8 +446,40 @@ public class EngineService {
 		life.setLifeExpectancy(country.getLifeExpectancy());
 		life.setInfantMortality(country.getInfantMortality());
 		life.setGdpPerCapita(country.getGdpPerCapita());
+		fillRegion(life);
 
 		return life;
+	}
+
+	// [화면용] 지금 사는 나라의 권역 (C08 마을 그림 고르기, 이민하면 바뀜)
+	private void fillRegion(LifeDTO life) {
+		if (life == null) {
+			return;
+		}
+		CountryStatDTO s = yearStat(life);
+		life.setRegionCode(s == null ? null : s.getRegionCode());
+	}
+
+	// ================= C03 비회원 → 회원 전환 =================
+	// 비회원으로 진행하다 회원가입·로그인하면 그 인생에 회원 번호를 채움
+	// 이미 진행 중인 회원 인생이 있으면 전환하지 않음 (회원 1명당 진행 중 인생 1개)
+	// 반환: 전환 후 진행 중인 회원 인생 (전환할 게 없으면 null)
+	public LifeDTO claimGuestLife(Integer memberId, String guestToken) {
+		if (memberId == null || guestToken == null || guestToken.equals("")) {
+			return null;
+		}
+		LifeDTO mine = new LifeDTO();
+		mine.setMemberId(memberId);
+		if (engineDao.selectPlayingLife(mine) != null) {
+			return null; // 이미 진행 중인 회원 인생이 있음
+		}
+		LifeDTO cond = new LifeDTO();
+		cond.setMemberId(memberId);
+		cond.setGuestToken(guestToken);
+		if (engineDao.claimGuestLife(cond) == 0) {
+			return null; // 전환할 비회원 인생이 없음
+		}
+		return currentLife(memberId, null);
 	}
 
 	// ================= 본인 확인 =================
@@ -551,6 +584,10 @@ public class EngineService {
 			life.setFocusOptions(focusOptions(life.getStageCode(), life));
 		}
 		restoreChoice(life); // 선택 이벤트를 아직 안 골랐으면 선택 창 다시 띄우기
+		if (life != null) {
+			showOffers(life, yearStat(life)); // 직업을 아직 안 골랐으면 같은 제안으로 선택 창 다시 띄우기
+		}
+		fillRegion(life);
 		return life;
 	}
 
@@ -616,6 +653,7 @@ public class EngineService {
 			}
 			finalResult(life);
 			engineDao.endLife(life);
+			fillRegion(life);
 			return life;
 		}
 
@@ -641,6 +679,7 @@ public class EngineService {
 		engineDao.updateLifeYear(life);
 		engineDao.insertYearLog(life);
 
+		fillRegion(life);
 		return life;
 	}
 
@@ -656,6 +695,7 @@ public class EngineService {
 		}
 		life.setFocusCode(focusCode);
 		engineDao.updateFocus(life);
+		fillRegion(life);
 		return life;
 	}
 
@@ -670,9 +710,19 @@ public class EngineService {
 				|| "EMPLOYED".equals(life.getJobStatus()) || "RETIRED".equals(life.getJobStatus())) {
 			return null; // 지금은 직업을 고를 수 없는 상태
 		}
-		JobDTO job = findJob(jobId);
-		if (job == null || levelIndex(job.getRequiredEdu()) > finishedLevel(life)) {
-			return null; // 없는 직업이거나 학력이 부족
+		// 올해 제안받은 3개 안에 있는 직업만 고를 수 있음 (같은 조건이면 같은 제안이 다시 나옴)
+		CountryStatDTO stat = yearStat(life);
+		if (!canGetJob(life, stat)) {
+			return null;
+		}
+		JobDTO job = null;
+		for (JobDTO o : offerJobs(life)) {
+			if (o.getJobId().equals(jobId)) {
+				job = o;
+			}
+		}
+		if (job == null) {
+			return null; // 제안받지 않은 직업
 		}
 
 		life.setJobId(job.getJobId());
@@ -692,6 +742,7 @@ public class EngineService {
 		}
 		engineDao.updateLifeYear(life);
 		life.setJobName(job.getJobName());
+		fillRegion(life);
 		return life;
 	}
 
@@ -829,6 +880,9 @@ public class EngineService {
 			if (age > 72 && !"BRAIN".equals(focus)) {
 				d -= 0.02; // 두뇌 활동을 안 하면 노년에 감소
 			}
+			if (d > 0) {
+				d = d * (1 + studyEffect(life)); // C13 학업 능력: 지식 증가량 보정
+			}
 			kE = clamp(kE * (age < 25 ? 0.97 : 0.985) + d, -1.4, 1.6);
 		}
 		life.setKnowledge(clamp(100 * normCdf(talW(age) * tal + kE), 0.5, 99.9));
@@ -956,10 +1010,19 @@ public class EngineService {
 		}
 	}
 
-	// 진학 확률 = 권역 진학률 × 가정형편 보정 × 도시/시골 보정
-	private double enrollRate(LifeDTO life, CountryStatDTO stat, int next) {
+	// 원작 odds: 확률 p를 배율 k만큼 "승산"으로 키우거나 줄임 (확률을 그냥 곱하면 1을 넘으니 승산으로 곱함)
+	private double odds(double p, double k) {
+		p = clamp(p, 1e-4, 1 - 1e-4);
+		return p * k / (1 - p + p * k);
+	}
 
-		// 권역 진학률 (%) - 데이터가 없으면 기본값
+	// 단계별 진학 확률 (원작 eduProbs)
+	// 권역 진학률(또래 중 그 단계까지 가는 비율)로 "앞 단계를 마친 사람 중 다음 단계로 가는 비율"을 구하고
+	// 가정형편·도시/시골 배율을 승산에 곱함
+	//   배율 = e^(m×(가정형편-3)) × (구매력 1인당 GDP 15,000 미만이면 도시 1.4 / 시골 0.75), m = 15,000 미만 0.6, 이상 0.45
+	//   대학: 졸업까지 가는 비율 = 대학 진학률 × 0.75 (최대 78%), 여자 ×1.2(남아시아·중동 제외)·남자 ×0.9
+	//   지식이 아주 높으면(또래 상위 4%) 대학 진학 더 쉬움 (원작 uniTop)
+	private double[] eduProbs(LifeDTO life, CountryStatDTO stat) {
 		double elem = 80, middle = 60, high = 40, uni = 15;
 		RegionStatDTO rs = regionStat(life);
 		if (rs != null) {
@@ -976,71 +1039,72 @@ public class EngineService {
 				uni = rs.getEnrollUni();
 			}
 		}
+		double p1 = clamp(elem / 100, 0.02, 0.999);
+		double p2 = Math.min(clamp(middle / 100, 0.01, 0.999), p1 * 0.998);
+		double p3 = Math.min(clamp(high / 100, 0.005, 0.999), p2 * 0.998);
+		double u = Math.min(Math.min(0.78, uni / 100 * 0.75), p3 * 0.95);
 
-		// 진학률은 "또래 전체 중 몇 %"라서, 앞 단계를 마친 사람 기준으로 바꿔서 계산
-		double p;
-		if (next == 0) {
-			p = elem / 100;
-		} else if (next == 1) {
-			p = middle / Math.max(elem, 1);
-		} else if (next == 2) {
-			p = high / Math.max(middle, 1);
-		} else if (next == 3) {
-			p = uni / Math.max(high, 1);
+		double ppp = toPpp(gdpOf(stat));
+		boolean lowInc = ppp < 15000;
+		double d = Math.exp((lowInc ? 0.6 : 0.45) * (life.getWealthClass() - 3));
+		if (lowInc) {
+			d = d * ("Y".equals(life.getIsUrban()) ? 1.4 : 0.75);
+		}
+		String g = groupOf(life.getCurrentCountry(), stat);
+		d = d * (1 + studyEffect(life)); // C13 학업 능력: 진학 승산 보정
+		double uniK = d;
+		if ("F".equals(life.getGender())) {
+			uniK = d * (g.equals("sa") || g.equals("mena") || g.equals("ssa") ? 1 : 1.2);
 		} else {
-			p = uni / 100 * 0.3; // 대학원: 대학 졸업자 중 대학 진학률 × 0.3
+			uniK = d * 0.9;
 		}
-		if (p > 0.98) {
-			p = 0.98;
+		double t1 = odds(p1, d);
+		double t2 = odds(p2 / p1, d);
+		double t3 = odds(p3 / p2, d);
+		double t4 = odds(Math.min(0.95, u / Math.max(p3, 0.05)), uniK);
+		if (kz(life) >= 1.75) {
+			t4 = 1 - (1 - t4) * (1 - 0.75 * clamp((t4 - 0.1) / 0.2, 0, 1));
 		}
-
-		// 가정형편 보정: e^(d × (형편 - 3)), d = 1인당 GDP 15,000달러 미만 0.6, 이상 0.45
-		double gdp = 5000;
-		if (stat != null && stat.getGdpPerCapita() != null) {
-			gdp = stat.getGdpPerCapita();
-		}
-		double d = gdp < 15000 ? 0.6 : 0.45;
-		p = p * Math.exp(d * (life.getWealthClass() - 3));
-
-		// 도시/시골 보정 (1인당 GDP 15,000달러 미만 나라만, 명세서 C06): 도시 ×1.4, 시골 ×0.75
-		if (gdp < 15000) {
-			if (life.getIsUrban().equals("Y")) {
-				p = p * 1.4;
-			} else {
-				p = p * 0.75;
-			}
-		}
-
-		if (p > 0.99) {
-			p = 0.99;
-		}
-		return p;
+		return new double[] { t1, t2, t3, t4 };
 	}
 
-	// 1년 중퇴 확률
-	private double dropRate(LifeDTO life, int idx) {
-		double p = 0.01;
-		// 지식 45 미만, 가정형편 1~2분위면 중퇴 확률 증가
-		if (life.getKnowledge() < 45) {
-			p = p * 2;
-		}
-		if (life.getWealthClass() <= 2) {
-			p = p * 2;
-		}
-		// 대학·대학원은 지식 배율 (85 이상 0.45 / 70 이상 0.78 / 50 이상 1.12 / 50 미만 1.68)
-		if (idx >= 3) {
-			double k = life.getKnowledge();
-			if (k >= 85) {
-				p = p * 0.45;
-			} else if (k >= 70) {
-				p = p * 0.78;
-			} else if (k >= 50) {
-				p = p * 1.12;
-			} else {
-				p = p * 1.68;
+	// 지식을 또래 가운데 위치 점수(z)로 (원작 kzOf)
+	private double kz(LifeDTO life) {
+		return invNorm(clamp(life.getKnowledge(), 0.5, 99.9) / 100);
+	}
+
+	// 진학 확률 (원작 eduProbs, 대학원은 원작 gradAdmit)
+	private double enrollRate(LifeDTO life, CountryStatDTO stat, int next) {
+		if (next == 4) {
+			// 대학원 합격: 0.1 + 대학 진학률÷400 + (지식-40)÷300 + (가정형편-3)×0.03 (5~45%)
+			//   원작은 플레이어가 지원할지 고르는데, 우리는 자동 진행이라 대학 졸업자 절반이 지원한다고 봄
+			double uni = 15;
+			RegionStatDTO rs = regionStat(life);
+			if (rs != null && rs.getEnrollUni() != null) {
+				uni = rs.getEnrollUni();
 			}
+			double admit = clamp(0.1 + uni / 400 + (life.getKnowledge() - 40) / 300 + (life.getWealthClass() - 3) * 0.03, 0.05, 0.45);
+			return clamp(admit * (1 + studyEffect(life)), 0, 0.9) * 0.5; // C13 학업 능력 보정
 		}
-		return p;
+		return eduProbs(life, stat)[next];
+	}
+
+	// 1년 중퇴 확률 (원작 lsKeep·usKeep)
+	// 중학교·고등학교만 중퇴 있음 (초등·대학·대학원은 원작에도 일반 중퇴 없음)
+	//   끝까지 다닐 확률 = 그 단계 진학 확률을 노력 배율만큼 키운 값 (최소 중학교 10%·고등학교 8%)
+	//   노력 배율 = 1.15 × (13세 이하 1.7, 그 위 2.05) × e^(0.85×지식 z - 0.36)
+	//   1년 중퇴 확률 = 1 - 끝까지 다닐 확률^(1/2) (3년 과정이라 2번 판정)
+	private double dropRate(LifeDTO life, int idx) {
+		if (idx != 1 && idx != 2) {
+			return 0;
+		}
+		CountryStatDTO stat = yearStat(life);
+		double[] t = eduProbs(life, stat);
+		double effort = 1.15 * (life.getCurrentAge() <= 13 ? 1.7 : 2.05)
+				* Math.exp(0.85 * clamp(kz(life), -3, 3) - 0.85 * 0.85 / 2);
+		double keep = idx == 1 ? odds(Math.max(t[1], 0.1), effort) : odds(Math.max(t[2], 0.08), effort);
+		keep = clamp(keep, 0.05, 1);
+		return 1 - Math.pow(keep, 1.0 / (years[idx] - 1));
 	}
 
 	// ================= C06-2 직업·소득·재산 =================
@@ -1148,25 +1212,44 @@ public class EngineService {
 					life.setJobStatus("EMPLOYED");
 					life.setIncomeRate(job.getIncomeRate());
 					life.setJobYears(0);
+					// 인생 기록 (EVENT_ID는 비워 둠: LIFE_EVENT_LOG.EVENT_ID는 빈 값 허용)
+					saveEventLog(life, age, null, null, "모아 둔 돈만으로는 살기 어려워 " + job.getJobName() + " 일을 다시 시작했다.");
 				}
 			}
 			return;
 		}
 
 		// 2. 15세 이상, 학교 안 다니고, 일자리가 없으면 매년 직업 3개 제안
+		showOffers(life, stat);
+	}
+
+	// 직업을 제안받을 수 있는 상태인지: 15세 이상, 학교 안 다니고, 일자리 없고, 은퇴 나이 전
+	private boolean canGetJob(LifeDTO life, CountryStatDTO stat) {
 		boolean noJob = life.getJobStatus() == null || "UNEMPLOYED".equals(life.getJobStatus());
-		if (age >= 15 && !"ENROLLED".equals(life.getSchoolStatus()) && noJob && age < retireAge(life, stat)) {
-			List<JobDTO> offers = offerJobs(life);
-			if (!offers.isEmpty()) {
-				life.setNeedJob(true);
-				life.setJobOffers(offers);
-			}
+		return "PLAYING".equals(life.getStatus()) && life.getCurrentAge() >= 15
+				&& !"ENROLLED".equals(life.getSchoolStatus()) && noJob && life.getCurrentAge() < retireAge(life, stat);
+	}
+
+	// 직업 선택 창 띄우기 (매년 진행 후, 이어하기·새로고침 때)
+	private void showOffers(LifeDTO life, CountryStatDTO stat) {
+		if (!canGetJob(life, stat)) {
+			return;
+		}
+		List<JobDTO> offers = offerJobs(life);
+		if (!offers.isEmpty()) {
+			life.setNeedJob(true);
+			life.setJobOffers(offers);
 		}
 	}
 
 	// 필요 학력을 갖춘 직업 중 권역 산업 비율에 따라 3개 제안
 	// 취업 준비 점수(0~2)가 높을수록 소득 배율 높은 직업이 나올 확률 증가
+	// 제안은 DB에 저장하지 않고, 같은 인생·나이·준비 점수·학력·나라면 항상 같은 3개가 나오게 뽑음
+	// → 새로고침해도 같은 제안이 다시 뜨고, 직업 선택 때 제안받은 직업인지 다시 뽑아서 확인 가능
 	private List<JobDTO> offerJobs(LifeDTO life) {
+		long seed = life.getLifeId() * 1000003L + life.getCurrentAge() * 101L + life.getPrepScore() * 7L
+				+ finishedLevel(life) * 13L + String.valueOf(life.getCurrentCountry()).hashCode();
+		java.util.SplittableRandom rnd = new java.util.SplittableRandom(seed);
 		// 권역 산업 비율 (%) - 데이터가 없으면 기본값
 		double agri = 40, industry = 25, service = 35;
 		RegionStatDTO rs = regionStat(life);
@@ -1211,7 +1294,7 @@ public class EngineService {
 			for (double w : weights) {
 				total += w;
 			}
-			double pick = random.nextDouble() * total;
+			double pick = rnd.nextDouble() * total;
 			double sum = 0;
 			int chosen = pool.size() - 1;
 			for (int i = 0; i < pool.size(); i++) {
@@ -1370,6 +1453,7 @@ public class EngineService {
 		List<EventResultDTO> events = eventService.rollYear(life);
 
 		for (EventResultDTO e : events) {
+			applyHistEffect(life, e); // 역사 사건이면 실직·학업 중단 (선택 이벤트도 사건은 이미 일어남)
 			if (e.isChoice()) {
 				// 상황 문장만 기록하고, 효과는 고른 선택지로 (PENDING_EVENT_ID에 저장)
 				life.setPendingEventId(e.getEventId());
@@ -1383,6 +1467,53 @@ public class EngineService {
 
 		fixStats(life);
 		life.setEvents(events); // [화면용] 올해 일어난 일
+	}
+
+	// 역사 사건의 실직·학업 중단 (C10 → C06, 명세서 C06 3·8번)
+	// 확률 = 유형별 보정값(HIST_EVENT_TYPE) × 사건 강도: 예) 전쟁 강도 2면 실직 10%, 학업 중단 16%
+	// (피란 이민은 갈 나라 데이터가 없어서 아직 반영 안 함)
+	private void applyHistEffect(LifeDTO life, EventResultDTO e) {
+		if (!"HIST".equals(e.getEventType())) {
+			return;
+		}
+		HistEffectDTO h = engineDao.selectHistEffect(e.getEventId());
+		if (h == null) {
+			return;
+		}
+		int k = h.getIntensity() == null ? 1 : h.getIntensity();
+		String why = h.getTypeName() == null ? "역사적 사건" : h.getTypeName();
+		int age = life.getCurrentAge();
+		if ("EMPLOYED".equals(life.getJobStatus()) && h.getJobLossAdd() != null
+				&& random.nextDouble() < h.getJobLossAdd() * k) {
+			life.setJobStatus("UNEMPLOYED");
+			life.setJobYears(0);
+			saveEventLog(life, age, e.getEventId(), null, why + " 때문에 일자리를 잃었다.");
+		}
+		if ("ENROLLED".equals(life.getSchoolStatus()) && h.getEduStopAdd() != null
+				&& random.nextDouble() < h.getEduStopAdd() * k) {
+			life.setSchoolStatus("DROPPED");
+			life.setDropReason(why + " 때문에 학교를 그만둠");
+			saveEventLog(life, age, e.getEventId(), null, why + " 때문에 학교를 그만두었다.");
+		}
+	}
+
+	// C13 학업 능력 효과값 (예: 0.1 = 지식 증가량·진학 승산 +10%), 효과 표가 비어 있으면 0
+	// 한 인생 안에서는 바뀌지 않아서 서버 메모리에 보관 (매년 DB를 읽지 않게)
+	private final Map<Integer, Double> studyCache = new ConcurrentHashMap<>();
+
+	private double studyEffect(LifeDTO life) {
+		Double v = studyCache.get(life.getLifeId());
+		if (v == null) {
+			if (studyCache.size() > 20000) {
+				studyCache.clear();
+			}
+			v = engineDao.selectStudyEffect(life.getLifeId());
+			if (v == null) {
+				v = 0.0;
+			}
+			studyCache.put(life.getLifeId(), v);
+		}
+		return v;
 	}
 
 	// 이벤트 결과 하나를 인생에 반영 (일반 이벤트, 고른 선택지 공통)
@@ -1406,7 +1537,7 @@ public class EngineService {
 		}
 
 		// 4. 상태 변경 (결혼·자녀·부모 사망·실직·조기 은퇴·이민)
-		applyAction(life, e.getResultAction(), e.getMigrateTo());
+		applyAction(life, e.getResultAction(), e.getMigrateTo(), age);
 
 		// 5. 경험 기록: 윤아님 pickEvent의 '한 번만'·'필요 경험'·'제외 경험' 판정에 쓰임
 		//    (선택지는 이벤트ID_순서, 예: LE_MIGRATE_WORK_1)
@@ -1456,6 +1587,7 @@ public class EngineService {
 		life.setEvents(list); // [화면용] 고른 결과
 
 		engineDao.updateLifeYear(life);
+		fillRegion(life);
 		return life;
 	}
 
@@ -1474,16 +1606,37 @@ public class EngineService {
 	}
 
 	// 이벤트 결과의 상태 변경 처리 (RESULT_ACTION)
-	private void applyAction(LifeDTO life, String action, String migrateTo) {
+	// 결혼 상태는 경험 STATE_MARRIED로도 남김: 윤아님 이벤트 조건에 쓰임
+	//   (출산 LE_BIRTH_1의 필요 경험, 연애 LE_LOVE_*·결혼 생활 변화의 제외/필요 경험)
+	private void applyAction(LifeDTO life, String action, String migrateTo, int age) {
 		if (action == null) {
 			return;
 		}
 		switch (action) {
 		case "MARRY": // 결혼
-			life.setMarriedYn("Y");
+			if (!"Y".equals(life.getMarriedYn())) {
+				life.setMarriedYn("Y");
+				ExperienceDTO married = new ExperienceDTO();
+				married.setLifeId(life.getLifeId());
+				married.setExpId("STATE_MARRIED");
+				married.setAge(age);
+				married.setYearNo(life.getBirthYear() + age);
+				engineDao.insertExperience(married);
+			}
 			break;
 		case "CHILD": // 자녀 +1
 			life.setChildCount(life.getChildCount() + 1);
+			break;
+		case "MARRIAGE_END": // 이혼·사별 (윤아님 이벤트 값): 결혼 상태 해제 (자녀 수는 그대로)
+		case "DIVORCE":
+		case "SPOUSE_DEATH":
+			if ("Y".equals(life.getMarriedYn())) {
+				life.setMarriedYn("N");
+				ExperienceDTO married = new ExperienceDTO();
+				married.setLifeId(life.getLifeId());
+				married.setExpId("STATE_MARRIED");
+				engineDao.deleteExperience(married); // 다시 연애·재혼할 수 있게, 출산은 멈춤
+			}
 			break;
 		case "PARENT_DEATH": // 부모 사망
 			life.setParentAlive("N");

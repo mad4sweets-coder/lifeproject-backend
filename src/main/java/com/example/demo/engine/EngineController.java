@@ -132,6 +132,24 @@ public class EngineController {
 		return ResponseEntity.ok(life);
 	}
 
+	// C03 비회원 → 회원 전환  POST /api/engine/claim  { guestToken }
+	// 비회원으로 진행하다 회원가입·로그인한 직후 화면에서 호출 (Authorization 헤더 필수)
+	// 이미 진행 중인 회원 인생이 있으면 전환하지 않음
+	@PostMapping("/api/engine/claim")
+	public ResponseEntity<?> claimGuestLife(@RequestBody EngineRequestDTO req,
+			@RequestHeader(value = "Authorization", required = false) String auth) {
+		Integer memberId = loginMemberId(auth);
+		if (memberId == null) {
+			return ResponseEntity.status(401).body("로그인이 필요해요.");
+		}
+		LifeDTO life = engineService.claimGuestLife(memberId, req.getGuestToken());
+		if (life == null) {
+			return ResponseEntity.status(404)
+					.body("전환할 비회원 인생이 없거나, 이미 진행 중인 회원 인생이 있어요.");
+		}
+		return ResponseEntity.ok(life);
+	}
+
 	// C09 선택 이벤트 고르기  POST /api/engine/choice  { lifeId, choiceId, guestToken }
 	@PostMapping("/api/engine/choice")
 	public ResponseEntity<?> chooseEvent(@RequestBody EngineRequestDTO req,
