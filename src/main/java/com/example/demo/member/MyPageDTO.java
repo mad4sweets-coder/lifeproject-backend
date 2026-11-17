@@ -1,0 +1,56 @@
+package com.example.demo.member;
+
+// 마이페이지(M04) 화면에 보낼 정보를 담는 상자
+// member-mapper.xml 의 selectMyPage 결과가 여기에 담긴다
+public class MyPageDTO {
+
+	// ===== 가입 정보 (MEMBER) =====
+	private String loginId;     // 아이디
+	private String nickname;    // 닉네임
+	private String email;       // 이메일
+	private String joinDate;    // 가입 일자 (SQL에서 'YYYY-MM-DD' 글자로 바꿔서 받음)
+	private int point;          // 보유 포인트
+
+	// ===== 숫자 칸 3개 =====
+	private int lifeCount;      // 살아본 인생 수 (끝난 인생)
+	private int questDone;      // 퀘스트 달성 수
+
+	// ===== 진행 중인 인생 (없으면 전부 null) =====
+	private Integer lifeId;     // 인생 번호 (int 는 null 을 못 담아서 Integer)
+	private String lifeName;    // 캐릭터 이름
+	private String countryName; // 지금 사는 나라
+	private Integer currentAge; // 지금 나이
+
+	public String getLoginId() { return loginId; }
+	public void setLoginId(String loginId) { this.loginId = loginId; }
+
+	public String getNickname() { return nickname; }
+	public void setNickname(String nickname) { this.nickname = nickname; }
+
+	public String getEmail() { return email; }
+	public void setEmail(String email) { this.email = email; }
+
+	public String getJoinDate() { return joinDate; }
+	public void setJoinDate(String joinDate) { this.joinDate = joinDate; }
+
+	public int getPoint() { return point; }
+	public void setPoint(int point) { this.point = point; }
+
+	public int getLifeCount() { return lifeCount; }
+	public void setLifeCount(int lifeCount) { this.lifeCount = lifeCount; }
+
+	public int getQuestDone() { return questDone; }
+	public void setQuestDone(int questDone) { this.questDone = questDone; }
+
+	public Integer getLifeId() { return lifeId; }
+	public void setLifeId(Integer lifeId) { this.lifeId = lifeId; }
+
+	public String getLifeName() { return lifeName; }
+	public void setLifeName(String lifeName) { this.lifeName = lifeName; }
+
+	public String getCountryName() { return countryName; }
+	public void setCountryName(String countryName) { this.countryName = countryName; }
+
+	public Integer getCurrentAge() { return currentAge; }
+	public void setCurrentAge(Integer currentAge) { this.currentAge = currentAge; }
+}
