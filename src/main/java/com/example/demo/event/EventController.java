@@ -53,7 +53,7 @@ public class EventController {
 	@GetMapping("/test/year")
 	public List<EventResultDTO> testYear(@RequestParam int age, @RequestParam int birthYear,
 			@RequestParam String country, @RequestParam String gender, @RequestParam int wealth,
-			@RequestParam String name, @RequestParam(defaultValue = "0") int lifeId) {
+			@RequestParam String name, @RequestParam(defaultValue = "N") String married, @RequestParam(defaultValue = "0") int lifeId) {
 		LifeDTO life = new LifeDTO();
 		life.setLifeId(lifeId);
 		life.setCurrentAge(age);
@@ -62,6 +62,7 @@ public class EventController {
 		life.setGender(gender);
 		life.setWealthClass(wealth);
 		life.setName(name);
+		life.setMarriedYn(married);
 		return eServ.rollYear(life);
 	}
 

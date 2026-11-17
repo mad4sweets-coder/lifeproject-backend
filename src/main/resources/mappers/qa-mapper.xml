@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+	"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.demo.qa.QaDao">
+
+	<!-- ================= C20 인생 Q&A ================= -->
+
+	<!-- 이 인생의 질문·답변 (오래된 순) -->
+	<select id="selectQaList" parameterType="int" resultType="com.example.demo.qa.QaDTO">
+		SELECT QA_ID      AS qaId,
+		       LIFE_ID    AS lifeId,
+		       QUESTION   AS question,
+		       ANSWER     AS answer,
+		       SOURCE_IDS AS sourceIds,
+		       TO_CHAR(CREATED_AT, 'YYYY-MM-DD HH24:MI') AS createdAt
+		FROM QA_LOG
+		WHERE LIFE_ID = #{lifeId}
+		ORDER BY QA_ID
+	</select>
+
+	<select id="countQa" parameterType="int" resultType="int">
+		SELECT COUNT(*) FROM QA_LOG WHERE LIFE_ID = #{lifeId}
+	</select>
+
+	<!-- 새 질문·답변 저장: 번호를 먼저 뽑아서 qaId 에 넣어 줌 -->
+	<insert id="insertQa" parameterType="com.example.demo.qa.QaDTO">
+		<selectKey keyProperty="qaId" resultType="int" order="BEFORE">
+			SELECT SEQ_QA_LOG.NEXTVAL FROM dual
+		</selectKey>
+		INSERT INTO QA_LOG (QA_ID, LIFE_ID, QUESTION, ANSWER, SOURCE_IDS)
+		VALUES (#{qaId}, #{lifeId}, #{question}, #{answer, jdbcType=CLOB}, #{sourceIds, jdbcType=VARCHAR})
+	</insert>
+
+	<select id="selectQa" parameterType="int" resultType="com.example.demo.qa.QaDTO">
+		SELECT QA_ID      AS qaId,
+		       LIFE_ID    AS lifeId,
+		       QUESTION   AS question,
+		       ANSWER     AS answer,
+		       SOURCE_IDS AS sourceIds,
+		       TO_CHAR(CREATED_AT, 'YYYY-MM-DD HH24:MI') AS createdAt
+		FROM QA_LOG
+		WHERE QA_ID = #{qaId}
+	</select>
+
+</mapper>

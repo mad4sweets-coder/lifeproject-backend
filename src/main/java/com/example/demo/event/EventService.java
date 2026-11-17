@@ -57,14 +57,16 @@ public class EventService {
 		return hits;
 	}
 
+	private static final int AVG_MARRY_AGE = 25; // 평균 결혼 나이 (설계값, 추후 시뮬레이션 결과로 조정)
+
 	// 템플릿 하나의 올해 발생 확률
 	public double calcProbability(EventTemplateDTO t, int age, Map<String, Object> stat) {
 		double base = t.getBaseProb() == null ? 0 : t.getBaseProb();
 
 		switch (t.getProbMethod()) {
-		case "TFR": // 출산: 합계출산율 ÷ 출산 가능 기간 (템플릿 나이 범위)
+		case "TFR": // 출산: 합계출산율 ÷ 결혼 후 출산 가능 기간 (평균 결혼 나이 ~ 템플릿 최대 나이)
 			Double tfr = getStat(stat, "TFR");
-			int years = t.getMaxAge() - t.getMinAge() + 1;
+			int years = t.getMaxAge() - AVG_MARRY_AGE + 1;
 			return tfr == null ? base : tfr / years;
 		case "UNEMPLOYMENT": // 실직: 실업률 ÷ 100
 			Double unemp = getStat(stat, "UNEMPLOYMENT_RATE");
@@ -80,6 +82,11 @@ public class EventService {
 			// 나라 건강 배율 = 75(기준 기대수명) ÷ 기대수명, 0.8~2.0배 제한 / 통계 없으면 1.0
 			double countryRate = (le == null) ? 1.0 : Math.min(Math.max(75 / le, 0.8), 2.0);
 			return base * diseaseAgeRate(age) * countryRate;
+		case "SPOUSE_DEATH": // 사별: 배우자(동갑 가정) 사망 확률 = 엔진 사망 판정(C07)의 5세 이상 기본 곡선과 같은 공식
+			Double spouseLe = getStat(stat, "LIFE_EXPECTANCY");
+			double lifeExp = (spouseLe == null) ? 70 : spouseLe; // 통계 없으면 기대수명 70 (엔진 기본값과 같음)
+			double shift = (75 - lifeExp) * 0.75; // 기대수명이 낮을수록 곡선이 앞당겨짐 (엔진과 같음)
+			return Math.min(0.000065 * Math.exp(0.09 * (age + shift)), 0.5); // 최대 50%
 		default: // FIXED
 			return base;
 		}
@@ -205,6 +212,9 @@ public class EventService {
 		int age = life.getCurrentAge();
 		int year = life.getBirthYear() + age;
 		List<String> expIds = eDAO.selectExpIds(life.getLifeId());
+		if ("Y".equals(life.getMarriedYn())) {
+			expIds.add("STATE_MARRIED"); // 지금 결혼 중 (DB 저장 안 함, 조건 판정용)
+		}
 		List<EventResultDTO> results = new ArrayList<>();
 		boolean hasChoice = false; // 한 해에 선택 이벤트는 1개만 (역사 + 인생 합쳐서)
 
@@ -272,7 +282,7 @@ public class EventService {
 				wealth = -wealth;
 				text = text + " 하지만 투자는 실패해 손해를 봤다.";
 				r.setEffIncomeRate(0); // 실패하면 소득 증가 없음
-				r.setEffHappiness(-Math.abs(r.getEffHappiness()) - 3); // 실패하면 행복 감소
+				r.setEffHappiness(-Math.abs(r.getEffHappiness()) - 3); // 실패하면 행복 감소 -3은 임의의 설정값, 테스트 후 변경 가능
 			}
 			r.setResultAction(null); // 투자는 엔진에서 따로 처리할 상태 변화 없음
 		} else {
