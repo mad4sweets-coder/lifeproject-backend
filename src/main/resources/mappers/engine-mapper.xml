@@ -140,6 +140,7 @@
 		       PENSION         AS pension,
 		       STAGE_CODE      AS stageCode,
 		       FOCUS_CODE      AS focusCode,
+		       PENDING_EVENT_ID AS pendingEventId,
 		       STATUS          AS status
 		FROM LIFE
 		WHERE LIFE_ID = #{lifeId}
@@ -180,6 +181,7 @@
 		       PENSION         AS pension,
 		       STAGE_CODE      AS stageCode,
 		       FOCUS_CODE      AS focusCode,
+		       PENDING_EVENT_ID AS pendingEventId,
 		       STATUS          AS status
 		FROM LIFE
 		WHERE STATUS = 'PLAYING'
@@ -195,6 +197,10 @@
 	<update id="updateLifeYear" parameterType="com.example.demo.engine.LifeDTO">
 		UPDATE LIFE
 		SET CURRENT_AGE    = #{currentAge},
+		    CURRENT_COUNTRY = #{currentCountry},
+		    IS_MARRIED     = NVL(#{marriedYn, jdbcType=CHAR}, 'N'),
+		    CHILD_COUNT    = #{childCount},
+		    PARENT_ALIVE   = NVL(#{parentAlive, jdbcType=CHAR}, 'Y'),
 		    HEALTH         = #{health},
 		    HAPPINESS      = #{happiness},
 		    KNOWLEDGE      = #{knowledge},
@@ -212,6 +218,7 @@
 		    PENSION        = #{pension, jdbcType=NUMERIC},
 		    STAGE_CODE     = #{stageCode, jdbcType=VARCHAR},
 		    FOCUS_CODE     = #{focusCode, jdbcType=VARCHAR},
+		    PENDING_EVENT_ID = #{pendingEventId, jdbcType=VARCHAR},
 		    LAST_PLAYED_AT = SYSDATE
 		WHERE LIFE_ID = #{lifeId}
 	</update>
@@ -278,6 +285,25 @@
 		INSERT INTO LIFE_EXPERIENCE (LIFE_ID, EXP_ID, AGE, YEAR_NO)
 		VALUES (#{lifeId}, #{expId}, #{age}, #{yearNo})
 	</insert>
+
+	<!-- ================= C09 이벤트 기록 ================= -->
+
+	<insert id="insertEventLog" parameterType="com.example.demo.engine.EventLogDTO">
+		INSERT INTO LIFE_EVENT_LOG (LOG_ID, LIFE_ID, AGE, YEAR_NO, EVENT_ID, CHOICE_ID, LOG_TEXT, IS_AI)
+		VALUES (SEQ_LIFE_EVENT_LOG.NEXTVAL, #{lifeId}, #{age}, #{yearNo},
+		        #{eventId, jdbcType=VARCHAR}, #{choiceId, jdbcType=NUMERIC}, #{logText}, #{isAi})
+	</insert>
+
+	<!-- 고르기를 기다리는 선택 이벤트의 상황 문장 (이어하기 때 선택 창 다시 띄우기) -->
+	<select id="selectPendingText" parameterType="com.example.demo.engine.LifeDTO" resultType="string">
+		SELECT LOG_TEXT FROM (
+			SELECT LOG_TEXT FROM LIFE_EVENT_LOG
+			WHERE LIFE_ID = #{lifeId}
+			  AND EVENT_ID = #{pendingEventId}
+			  AND CHOICE_ID IS NULL
+			ORDER BY LOG_ID DESC
+		) WHERE ROWNUM = 1
+	</select>
 
 	<!-- ================= C06 진학 ================= -->
 
