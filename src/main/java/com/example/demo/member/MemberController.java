@@ -1,10 +1,12 @@
 package com.example.demo.member;
 
+import java.util.List;
 import java.util.Map;
 
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestAttribute;
@@ -165,5 +167,42 @@ public class MemberController {
 			return ResponseEntity.badRequest().body(Map.of("message", error));
 		}
 		return ResponseEntity.ok(Map.of("message", "비밀번호를 변경했습니다."));
+	}
+	
+	
+
+	// 내 특성 레벨 (C01 퀘스트 화면, M08 특성 강화)  GET /api/members/me/traits
+	// 돌려주는 JSON: [ { traitId, traitName, traitLevel, maxLevel }, ... ]  (INVEST, DISEASE, LOVE, STUDY 순서)
+	@GetMapping("/me/traits")
+	public List<MemberTraitDTO> myTraits(@RequestAttribute("memberId") String memberId) {
+		return service.myTraits(Integer.parseInt(memberId));
+	}
+
+	// 전생 기록 (M07)  GET /api/members/me/lives?page=1&sort=recent
+	// sort: recent(최신순, 기본) / age(오래 산 순)
+	// 돌려주는 JSON: { total, page, size, questDone, pointSum, lives: [ {lifeNo, lifeId, countryName, ...}, ... ] }
+	@GetMapping("/me/lives")
+	public Map<String, Object> myLives(@RequestAttribute("memberId") String memberId,
+			@RequestParam(defaultValue = "1") int page,
+			@RequestParam(defaultValue = "recent") String sort) {
+		return service.myLives(Integer.parseInt(memberId), page, sort);
+	}
+
+	// 특성 레벨 올리기 (M08)  POST /api/members/me/traits/{traitId}/levelUp
+	// 포인트 1점 → 그 특성 1레벨 (다음 생부터 적용)
+	// 돌려주는 JSON: { point: 남은 포인트, traits: [ ... ] }
+	@PostMapping("/me/traits/{traitId}/levelUp")
+	public ResponseEntity<?> levelUp(@RequestAttribute("memberId") String memberId,
+			@PathVariable String traitId) {
+		int id = Integer.parseInt(memberId);
+		try {
+			service.levelUp(id, traitId);
+		} catch (IllegalStateException e) {
+			// 포인트 부족 / 이미 Lv.5 → 아무것도 안 바뀜 (트랜잭션 취소)
+			return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+		}
+		return ResponseEntity.ok(Map.of(
+				"point", service.myPage(id).getPoint(),
+				"traits", service.myTraits(id)));
 	}
 }

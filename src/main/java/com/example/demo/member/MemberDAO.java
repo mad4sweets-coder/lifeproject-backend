@@ -1,5 +1,6 @@
 package com.example.demo.member;
 
+import java.util.List;
 import java.util.Map;
 
 import org.mybatis.spring.SqlSessionTemplate;
@@ -136,5 +137,46 @@ public class MemberDAO {
 	public int updatePassword(int memberId, String encodedPw) {
 		return mybatis.update("member.updatePassword",
 				Map.of("memberId", memberId, "password", encodedPw));
+	}
+
+	// C01·M08: 내 특성 4종 레벨
+	public List<MemberTraitDTO> selectMyTraits(int memberId) {
+		return mybatis.selectList("member.selectMyTraits", memberId);
+	}
+
+	// M07: 끝난 인생 목록 (start 다음 줄부터 end 줄까지)
+	public List<LifeRecordDTO> selectMyLives(int memberId, String sort, int start, int end) {
+		return mybatis.selectList("member.selectMyLives",
+				Map.of("memberId", memberId, "sort", sort, "start", start, "end", end));
+	}
+
+	// M07: 끝난 인생 개수
+	public int countMyEndedLives(int memberId) {
+		return mybatis.selectOne("member.countMyEndedLives", memberId);
+	}
+
+	// M07: 퀘스트 달성 수 (내 모든 인생)
+	public int countMyQuestDone(int memberId) {
+		return mybatis.selectOne("member.countMyQuestDone", memberId);
+	}
+
+	// M07: 퀘스트로 받은 포인트 합계
+	public int sumMyQuestPoint(int memberId) {
+		return mybatis.selectOne("member.sumMyQuestPoint", memberId);
+	}
+
+	// M08: 특성 레벨 +1 (최대 레벨 미만일 때만) → 바뀐 줄 수
+	public int increaseTraitLevel(int memberId, String traitId) {
+		return mybatis.update("member.increaseTraitLevel", Map.of("memberId", memberId, "traitId", traitId));
+	}
+
+	// M08: 포인트 -1 (1점 이상일 때만) → 바뀐 줄 수
+	public int decreasePoint(int memberId) {
+		return mybatis.update("member.decreasePoint", memberId);
+	}
+
+	// M08: 포인트 내역 저장 (-1, TRAIT_LEVELUP)
+	public int insertTraitLevelUpHistory(int memberId) {
+		return mybatis.insert("member.insertTraitLevelUpHistory", memberId);
 	}
 }

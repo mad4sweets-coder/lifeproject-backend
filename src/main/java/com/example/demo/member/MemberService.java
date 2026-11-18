@@ -1,6 +1,8 @@
 package com.example.demo.member;
 
 import java.security.SecureRandom;
+import java.util.List;
+import java.util.Map;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.javamail.JavaMailSender;
@@ -393,5 +395,55 @@ public class MemberService {
 			  </table>
 			</div>
 			""".formatted(title, spaced);
+	}
+
+	// ===== 내 특성 레벨 (C01, M08) =====
+	public List<MemberTraitDTO> myTraits(int memberId) {
+		return dao.selectMyTraits(memberId);
+	}
+
+	// ===== 전생 기록 (M07) =====
+	// 끝난(ENDED) 인생 목록을 한 페이지에 10개씩 + 위쪽 숫자 칸(살아본 인생, 퀘스트 달성, 획득 포인트)
+	public Map<String, Object> myLives(int memberId, int page, String sort) {
+		int size = 10;
+		if (page < 1) page = 1;
+		if (!"age".equals(sort)) sort = "recent"; // 이상한 값이 오면 최신순
+
+		// 1. 몇 번째 줄부터 몇 번째 줄까지 (1페이지: 1~10, 2페이지: 11~20 …)
+		int start = (page - 1) * size; // 이 줄 "다음"부터
+		int end = page * size;         // 이 줄까지
+
+		// 2. DB 에서 가져오기
+		List<LifeRecordDTO> lives = dao.selectMyLives(memberId, sort, start, end);
+		int total = dao.countMyEndedLives(memberId);
+
+		// 3. 화면에 보낼 상자 (Map 에 이름표 붙여 담기)
+		return Map.of(
+				"total", total,                           // 살아본 인생 수
+				"page", page,
+				"size", size,
+				"questDone", dao.countMyQuestDone(memberId), // 퀘스트 달성 수
+				"pointSum", dao.sumMyQuestPoint(memberId),   // 퀘스트로 받은 포인트 합계
+				"lives", lives);
+	}
+
+	// ===== 특성 레벨 올리기 (M08) =====
+	// 포인트 1점 차감 + 특성 1레벨 상승 + 포인트 내역 저장을 한 번에 (하나라도 실패하면 모두 취소)
+	// 버튼을 빠르게 두 번 눌러도 SQL 의 조건(WHERE POINT >= 1, TRAIT_LEVEL < 5) 때문에 넘치지 않음
+	@Transactional
+	public void levelUp(int memberId, String traitId) {
+
+		// 1. 특성 레벨 +1 (이미 최대 레벨이면 0줄이 바뀜)
+		if (dao.increaseTraitLevel(memberId, traitId) == 0) {
+			throw new IllegalStateException("이미 최대 레벨이거나 없는 특성이에요.");
+		}
+
+		// 2. 포인트 -1 (포인트가 0이면 0줄이 바뀜 → 예외 → 1번도 같이 취소)
+		if (dao.decreasePoint(memberId) == 0) {
+			throw new IllegalStateException("포인트가 부족해요.");
+		}
+
+		// 3. 포인트 내역 저장 (AMOUNT -1, REASON 'TRAIT_LEVELUP', 인생과는 상관없어서 LIFE_ID 는 NULL)
+		dao.insertTraitLevelUpHistory(memberId);
 	}
 }

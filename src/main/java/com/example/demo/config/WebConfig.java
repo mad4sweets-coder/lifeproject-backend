@@ -24,7 +24,7 @@ public class WebConfig implements WebMvcConfigurer {
 	public void addInterceptors(InterceptorRegistry registry) {
 		registry.addInterceptor(loginValidator)
 				// 회원 전용 주소 (마이페이지·정보 수정·탈퇴 등은 /api/members/... 아래에 만들 예정)
-				.addPathPatterns("/api/members/**")
+				.addPathPatterns("/api/members/**", "/api/quests/**") // 퀘스트(C01)도 회원만
 				// 로그인 없이 써야 하는 주소는 빼기
 				.excludePathPatterns(
 						"/api/members",          // 회원가입
