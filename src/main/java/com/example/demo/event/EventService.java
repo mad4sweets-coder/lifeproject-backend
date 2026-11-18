@@ -43,7 +43,8 @@ public class EventService {
 	// ===== 2단계: 템플릿별 확률 계산 + 굴리기 =====
 
 	// 올해 걸린 템플릿 목록
-	public List<EventTemplateDTO> rollTemplates(int age, int year, String countryCode, String gender) {
+	public List<EventTemplateDTO> rollTemplates(int age, int year, String countryCode, String gender,
+			Map<String, Double> traits) {
 		Map<String, Object> stat = eDAO.selectCountryStat(countryCode, year / 10 * 10);
 		List<EventTemplateDTO> hits = new ArrayList<>();
 
@@ -51,7 +52,7 @@ public class EventService {
 			if (age < t.getMinAge() || age > t.getMaxAge())
 				continue; // 나이 조건
 
-			double prob = calcProbability(t, age, stat, countryCode, gender);
+			double prob = finalProbability(t, age, stat, countryCode, gender, traits);
 			if (Math.random() < prob) {
 				hits.add(t);
 			}
@@ -92,6 +93,22 @@ public class EventService {
 		default: // FIXED
 			return base;
 		}
+	}
+
+	// 발생 확률에 영향을 주는 특성 배율 (질병·연애). 투자는 성공 확률이라 applyChoice에서 적용
+	private double occurTraitRate(EventTemplateDTO t, Map<String, Double> traits) {
+		if (traits == null || t.getTraitId() == null)
+			return 1.0;
+		String id = t.getTraitId();
+		if (!"DISEASE".equals(id) && !"LOVE".equals(id))
+			return 1.0;
+		return 1 + traits.getOrDefault(id, 0.0); // 예: 질병 Lv.5 → 1 + (-0.4) = 0.6배
+	}
+
+	// 최종 확률 = 통계 기반 확률 × 특성 배율
+	public double finalProbability(EventTemplateDTO t, int age, Map<String, Object> stat, String countryCode,
+			String gender, Map<String, Double> traits) {
+		return calcProbability(t, age, stat, countryCode, gender) * occurTraitRate(t, traits);
 	}
 
 	// 질병 나이대 배율
@@ -214,6 +231,7 @@ public class EventService {
 		int age = life.getCurrentAge();
 		int year = life.getBirthYear() + age;
 		List<String> expIds = eDAO.selectExpIds(life.getLifeId());
+		Map<String, Double> traits = getTraitEffects(life.getLifeId()); // C13 특성 효과 (없으면 Lv.1)
 		if ("Y".equals(life.getMarriedYn())) {
 			expIds.add("STATE_MARRIED"); // 지금 결혼 중 (DB 저장 안 함, 조건 판정용)
 		}
@@ -232,7 +250,7 @@ public class EventService {
 		}
 
 		// 2. 인생 이벤트 (C09)
-		for (EventTemplateDTO t : rollTemplates(age, year, life.getCurrentCountry(), life.getGender())) {
+		for (EventTemplateDTO t : rollTemplates(age, year, life.getCurrentCountry(), life.getGender(), traits)) {
 			GameEventDTO e = pickEvent(t, age, life.getGender(), life.getWealthClass(), expIds);
 			if (e == null)
 				continue; // 조건 맞는 이벤트 없음
@@ -278,7 +296,8 @@ public class EventService {
 
 		// 3. 투자: 50% 확률로 성공(자산 +) / 실패(자산 −)
 		if ("INVEST".equals(c.getResultAction())) {
-			if (Math.random() < 0.5) {
+			double successRate = 0.5 * (1 + getTraitEffect(life.getLifeId(), "INVEST")); // 기본 50% × 투자 특성 (Lv.5 → 70%)
+			if (Math.random() < successRate) {
 				text = text + " 투자는 성공적이었다.";
 			} else {
 				wealth = -wealth;
@@ -438,5 +457,21 @@ public class EventService {
 		r.setEffIncomeRate(0);
 
 		return r;
+	}
+
+	// ===== 특성 효과 (C13) =====
+
+	// 인생의 특성 효과: { 특성 ID → 효과 값 }, 없는 특성은 Lv.1(효과 0)
+	public Map<String, Double> getTraitEffects(int lifeId) {
+		Map<String, Double> effects = new HashMap<>();
+		for (Map<String, Object> row : eDAO.selectLifeTraitEffects(lifeId)) {
+			effects.put((String) row.get("TRAIT_ID"), ((Number) row.get("EFFECT_VALUE")).doubleValue());
+		}
+		return effects;
+	}
+
+	// 특성 하나의 효과 값 (엔진에서 STUDY 등 꺼낼 때 사용), 없으면 0
+	public double getTraitEffect(int lifeId, String traitId) {
+		return getTraitEffects(lifeId).getOrDefault(traitId, 0.0);
 	}
 }
