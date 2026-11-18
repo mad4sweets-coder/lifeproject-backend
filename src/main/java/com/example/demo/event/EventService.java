@@ -62,7 +62,8 @@ public class EventService {
 	private static final int AVG_MARRY_AGE = 25; // 평균 결혼 나이 (설계값, 추후 시뮬레이션 결과로 조정)
 
 	// 템플릿 하나의 올해 발생 확률
-	public double calcProbability(EventTemplateDTO t, int age, Map<String, Object> stat, String countryCode, String gender) {
+	public double calcProbability(EventTemplateDTO t, int age, Map<String, Object> stat, String countryCode,
+			String gender) {
 		double base = t.getBaseProb() == null ? 0 : t.getBaseProb();
 
 		switch (t.getProbMethod()) {
@@ -306,28 +307,15 @@ public class EventService {
 
 	private static final String[] TIER_NAMES = { "상위", "중상위", "중위", "중하위", "하위" };
 
-	// 목적지 후보: GDP 순 정렬 → 5구역 → 구역마다 1곳 랜덤 (후보 5곳 이하면 전부)
+	// 목적지 후보: GDP 순 정렬 → 5구역으로 나눠 구역마다 1곳 랜덤 (후보 5곳 이상 기준)
 	public List<DestinationDTO> pickDestinations(String currentCountry, int year) {
 		List<DestinationDTO> all = eDAO.selectMigrateCandidates(currentCountry, year / 10 * 10);
 		List<DestinationDTO> picks = new ArrayList<>();
 		int n = all.size();
 
-		if (n <= 5) {
-			// 후보가 5곳 이하: 전부 보여주고 순서대로 구역 매기기
-			for (int i = 0; i < n; i++) {
-				DestinationDTO d = all.get(i);
-				int g = i * 5 / n; // 0(상위) ~ 4(하위)
-				d.setTier(g + 1);
-				d.setTierName(TIER_NAMES[g]);
-				picks.add(d);
-			}
-			return picks;
-		}
-
-		// 후보가 6곳 이상: 5구역으로 나눠 구역마다 1곳 랜덤
 		for (int g = 0; g < 5; g++) {
-			int start = g * n / 5;
-			int end = (g + 1) * n / 5;
+			int start = g * n / 5; // 이 구역 시작 위치
+			int end = (g + 1) * n / 5; // 이 구역 끝 위치 (포함 안 함)
 			DestinationDTO d = all.get(start + (int) (Math.random() * (end - start)));
 			d.setTier(g + 1);
 			d.setTierName(TIER_NAMES[g]);
